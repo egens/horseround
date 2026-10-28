@@ -14,8 +14,8 @@ html, body {
   -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
 }
 #game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
-#game3d { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
-.gfx-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 8px 0 12px; }
+#game3d, .game3d { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+.gfx-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 8px 0 12px; }
 .gfx-pick .card.on { border-color: #fab005; background: #fff9db; }
 .hidden { display: none !important; }
 

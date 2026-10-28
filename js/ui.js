@@ -30,7 +30,7 @@ const UI = (() => {
     };
     $('btn-horses').onclick = () => openStable(G.atFarm());
     $('btn-inv').onclick = openInventory;
-    el.gfx.onclick = () => G.act.setGfx(G.S.gfx === 'voxel' ? '2d' : 'voxel');
+    el.gfx.onclick = () => G.act.setGfx({ '2d': 'voxel', voxel: 'real', real: '2d' }[G.S.gfx] || '2d');
     $('btn-help').onclick = openHelp;
     $('btn-sound').onclick = e => { e.currentTarget.textContent = Sound.toggle() ? '🔊' : '🔇'; };
     el.prompt.onclick = () => lastPrompt && lastPrompt.fn();
@@ -52,7 +52,7 @@ const UI = (() => {
     set('money', el.money, 'textContent', `🪙 ${d.money}`);
     set('count', el.count, 'textContent', `🐴 ${d.count}/${d.max}`);
     set('clock', el.clock, 'textContent', d.clock);
-    set('gfx', el.gfx, 'textContent', d.gfx === 'voxel' ? '🗺️ 2D' : '🧊 3D');
+    set('gfx', el.gfx, 'textContent', { voxel: '🧊 Кубики', real: '🌄 Реализм' }[d.gfx] || '🗺️ 2D');
     const md = ['gold', 'silver', 'bronze'].filter(k => d.stats[k]).map(k => `${MEDALS[k]}${d.stats[k]}`).join(' ');
     set('medals', el.medals, 'textContent', md);
     show(el.medals, !!md);
@@ -439,9 +439,10 @@ const UI = (() => {
         <h4>Графика</h4>
         <div class="gfx-pick">
           <button class="card ${G.S.gfx !== 'voxel' ? 'on' : ''}" data-act="gfx" data-arg="2d"><b>🗺️ Вид сверху (2D)</b><span>Рисованная карта. Работает везде, даже без интернета.</span></button>
-          <button class="card ${G.S.gfx === 'voxel' ? 'on' : ''}" data-act="gfx" data-arg="voxel"><b>🧊 Воксели (3D)</b><span>Объёмный мир из кубиков с тенями и фонарями. Нужен интернет для загрузки.</span></button>
+          <button class="card ${G.S.gfx === 'voxel' ? 'on' : ''}" data-act="gfx" data-arg="voxel"><b>🧊 Кубики (3D)</b><span>Объёмный мир из вокселей с тенями и фонарями.</span></button>
+          <button class="card ${G.S.gfx === 'real' ? 'on' : ''}" data-act="gfx" data-arg="real"><b>🌄 Реализм (3D)</b><span>Лошади настоящих пропорций с аллюрами, солнце по часам, трава на ветру, вода. Нужен мощный компьютер или планшет.</span></button>
         </div>
-        <p>Переключать графику можно в любой момент кнопкой вверху.</p>
+        <p>Переключать графику можно в любой момент кнопкой вверху. В 3D колесо мыши приближает и отдаляет камеру.</p>
         <p>Игра сохраняется сама.</p>
         <button class="btn green big" data-act="close">Играть!</button>
         <button class="btn ghost small" data-act="reset">Начать заново</button>

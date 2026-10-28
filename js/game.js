@@ -921,26 +921,29 @@ const Game = (() => {
     } else keys.delete(code);
   }
 
-  const voxelOn = () => S.gfx === 'voxel' && Voxel.ready;
+  // 3D-режимы: «кубики» и «реализм»
+  const R3 = { voxel: Voxel, real: Real };
+  const GFX_NAMES = { voxel: 'воксельную графику', real: 'реалистичную графику' };
+  const active3d = () => { const r = R3[S.gfx]; return r && r.ready ? r : null; };
 
   function setGfx(mode) {
     S.gfx = mode;
-    if (mode === 'voxel') {
-      UI.toast('Загружаю воксельную графику…');
-      Voxel.load().then(ok => {
-        if (!ok) { S.gfx = '2d'; UI.toast('Не получилось загрузить 3D (нужен интернет). Остаётся 2D.', 'warn'); }
-        Voxel.setVisible(S.gfx === 'voxel');
+    for (const k in R3) if (k !== mode) R3[k].setVisible(false);
+    if (R3[mode]) {
+      if (!R3[mode].ready) UI.toast(`Загружаю ${GFX_NAMES[mode]}…`);
+      R3[mode].load().then(ok => {
+        if (!ok) { S.gfx = '2d'; UI.toast('Не получилось загрузить 3D. Остаётся 2D.', 'warn'); }
+        R3[mode].setVisible(S.gfx === mode);
         save();
       });
-    } else {
-      Voxel.setVisible(false);
     }
     save();
   }
 
   function toWorld(e) {
-    if (voxelOn()) {
-      const w = Voxel.toWorld(e.clientX, e.clientY);
+    const r3 = active3d();
+    if (r3) {
+      const w = r3.toWorld(e.clientX, e.clientY);
       if (w) return w;
     }
     const r = canvas.getBoundingClientRect();
@@ -981,43 +984,44 @@ const Game = (() => {
   }
 
   // в 3D-режиме этот холст — прозрачный слой с надписями поверх сцены
-  function renderOverlay3d() {
+  function renderOverlay3d(R) {
     const p = S.player;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // высоты надписей — в «пикселях карты»
     const labels = [
-      ['🐴 КОНЮШНЯ', World.STABLE.x + World.STABLE.w / 2, World.STABLE.y - 10, 5],
-      ['🏇 МАНЕЖ', World.ARENA.x + World.ARENA.w * 0.32, World.ARENA.y - 20, 3],
-      ['🌿 ЛЕВАДА', World.PADDOCK.x + World.PADDOCK.w / 2, World.PADDOCK.y - 15, 3],
-      ['🏆 КОНКУРНОЕ ПОЛЕ', World.JUMPF.x + World.JUMPF.w / 2, World.JUMPF.y - 20, 3],
-      [World.SELL.name, World.SELL.x + World.SELL.w / 2, World.SELL.y - 10, 6],
-      [World.SHOP.name, World.SHOP.x + World.SHOP.w / 2, World.SHOP.y - 10, 6],
+      ['🐴 КОНЮШНЯ', World.STABLE.x + World.STABLE.w / 2, World.STABLE.y - 10, 200],
+      ['🏇 МАНЕЖ', World.ARENA.x + World.ARENA.w * 0.32, World.ARENA.y - 20, 60],
+      ['🌿 ЛЕВАДА', World.PADDOCK.x + World.PADDOCK.w / 2, World.PADDOCK.y - 15, 70],
+      ['🏆 КОНКУРНОЕ ПОЛЕ', World.JUMPF.x + World.JUMPF.w / 2, World.JUMPF.y - 20, 60],
+      [World.SELL.name, World.SELL.x + World.SELL.w / 2, World.SELL.y - 10, 120],
+      [World.SHOP.name, World.SHOP.x + World.SHOP.w / 2, World.SHOP.y - 10, 120],
     ];
     for (const [t, x, y, h] of labels) {
       if (Math.abs(x - p.x) > 1200 || Math.abs(y - p.y) > 900) continue;
-      const s = Voxel.project(x, y, h);
+      const s = R.project(x, y, h);
       if (s.ok) Draw.label(ctx, t, s.x, s.y, 16, '#3b2a1a');
     }
     // имена на табличках денников
-    if (World.inRect(p.x, p.y, World.STABLE, 500)) {
+    if (World.inRect(p.x, p.y, World.STABLE, 250)) {
       for (let i = 0; i < MAX_STALLS; i++) {
         const h = horseInStall(i);
         if (!h) continue;
         const r = World.stallRect(i);
-        const s = Voxel.project(r.x + r.w / 2, r.row ? World.AISLE_Y2 + 4 : World.AISLE_Y1 - 4, 2);
+        const s = R.project(r.x + r.w / 2, r.row ? World.AISLE_Y2 + 4 : World.AISLE_Y1 - 4, 30);
         if (s.ok) Draw.label(ctx, h.name, s.x, s.y, 11, '#3b2a1a');
       }
     }
     for (const f of floats) {
-      const s = Voxel.project(f.x, f.y, 8);
+      const s = R.project(f.x, f.y, 110);
       ctx.globalAlpha = Math.max(0, 1 - f.t / 1.4);
       if (s.ok) Draw.label(ctx, f.text, s.x, s.y - f.t * 30, 18, f.color);
     }
     ctx.globalAlpha = 1;
     if (!S.horses.length && !led && p.x < World.FIELD.x - 100) {
       const a = Math.atan2(herd.y - p.y, herd.x - p.x);
-      const s0 = Voxel.project(p.x, p.y, 0), s1 = Voxel.project(p.x + Math.cos(a) * 80, p.y + Math.sin(a) * 80, 0);
+      const s0 = R.project(p.x, p.y, 0), s1 = R.project(p.x + Math.cos(a) * 80, p.y + Math.sin(a) * 80, 0);
       const sa = Math.atan2(s1.y - s0.y, s1.x - s0.x);
       ctx.save();
       ctx.translate(s1.x, s1.y);
@@ -1036,10 +1040,11 @@ const Game = (() => {
 
   function render() {
     const p = S.player;
-    if (voxelOn()) {
+    const r3 = active3d();
+    if (r3) {
       cam.x = p.x - viewW / 2; cam.y = p.y - viewH / 2;
-      Voxel.render(api);
-      renderOverlay3d();
+      r3.render(api);
+      renderOverlay3d(r3);
       return;
     }
     cam.x = viewW >= World.W ? (World.W - viewW) / 2 : clamp(p.x - viewW / 2, 0, World.W - viewW);
@@ -1227,7 +1232,8 @@ const Game = (() => {
     addEventListener('beforeunload', save);
     document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
     UI.init(api);
-    if (S.gfx === 'voxel') setGfx('voxel');
+    if (R3[S.gfx]) setGfx(S.gfx);
+    canvas.addEventListener('wheel', e => { const r3 = active3d(); if (r3) { r3.zoom(e.deltaY); e.preventDefault(); } }, { passive: false });
     if (!S.seenHelp) { S.seenHelp = true; UI.openHelp(); }
     requestAnimationFrame(ts => { last = ts; requestAnimationFrame(frame); });
   }

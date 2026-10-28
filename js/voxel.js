@@ -5,8 +5,6 @@
  * 1 единица Three.js = 10 пикселей мира, ось Z сцены = ось Y карты.
  */
 const Voxel = (() => {
-  // сначала своя копия библиотеки (работает без интернета), потом CDN
-  const THREE_URLS = ['js/vendor/three.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'];
   const K = 0.1;        // пиксели мира → единицы сцены
   const V = 0.45;       // размер вокселя лошади
   let T = null;         // THREE
@@ -22,19 +20,11 @@ const Voxel = (() => {
   function load() {
     if (ready) return Promise.resolve(true);
     if (loading) return loading;
-    loading = new Promise(res => {
-      const start = () => { try { init(); res(true); } catch (e) { console.error(e); res(false); } };
-      if (window.THREE) return start();
-      const tryUrl = i => {
-        if (i >= THREE_URLS.length) return res(false);
-        const s = document.createElement('script');
-        s.src = THREE_URLS[i];
-        s.onload = () => (window.THREE ? start() : tryUrl(i + 1));
-        s.onerror = () => tryUrl(i + 1);
-        document.head.appendChild(s);
-      };
-      tryUrl(0);
-    }).then(ok => { if (!ok) loading = null; return ok; });
+    loading = ThreeLoader.load().then(ok => {
+      if (ok) { try { init(); } catch (e) { console.error(e); ok = false; } }
+      if (!ok) loading = null;
+      return ok;
+    });
     return loading;
   }
 
@@ -722,12 +712,12 @@ const Voxel = (() => {
     return { x: out.x / K, y: out.z / K };
   }
   function project(x, y, h = 0) {
-    const v = new T.Vector3(x * K, h, y * K).project(camera);
+    const v = new T.Vector3(x * K, h * K, y * K).project(camera);
     return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, ok: v.z < 1 };
   }
 
   return {
-    load, render, toWorld, project, setVisible,
+    load, render, toWorld, project, setVisible, zoom() {},
     get ready() { return ready; },
   };
 })();
