@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Лошадиная ферма</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div class="hud-left">
+      <span id="hud-money" class="pill"></span>
+      <span id="hud-count" class="pill"></span>
+      <span id="hud-medals" class="pill hidden"></span>
+    </div>
+    <div class="hud-right">
+      <button id="btn-horses" class="pill btn-hud" title="Мои лошади">🐴 Лошади</button>
+      <button id="btn-inv" class="pill btn-hud" title="Рюкзак">🎒</button>
+      <button id="btn-help" class="pill btn-hud" title="Как играть">❓</button>
+      <button id="btn-sound" class="pill btn-hud" title="Звук">🔊</button>
+    </div>
+  </div>
+  <canvas id="minimap" width="190" height="120"></canvas>
+  <div id="hint" class="hidden"></div>
+  <div id="toasts"></div>
+
+  <div id="exercise" class="hidden">
+    <div class="ex-head"><b id="ex-title"></b><button id="btn-ex-cancel" class="x" title="Прервать">✕</button></div>
+    <div class="ex-body"><div id="ex-letter" class="hidden"></div><div><div id="ex-line"></div><div id="ex-hint"></div></div></div>
+  </div>
+
+  <div id="bottom">
+    <div id="lead" class="panel hidden"><span id="lead-name"></span><button id="btn-release" class="btn small">Отпустить</button></div>
+    <div id="ride" class="panel hidden">
+      <div class="ride-top"><span id="ride-name"></span><div class="energy"><div id="ride-energy"></div></div></div>
+      <div class="gaits">
+        <button data-gait="0" class="btn">1 Шаг</button>
+        <button data-gait="1" class="btn">2 Рысь</button>
+        <button data-gait="2" class="btn">3 Галоп</button>
+        <button id="btn-dismount" class="btn ghost">Слезть</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btn-lift" class="btn big orange hidden">⤴ Ноги выше!</button>
+      <button id="btn-lasso" class="btn big orange hidden">🤠 Бросить лассо</button>
+      <button id="prompt" class="btn big green hidden"></button>
+    </div>
+  </div>
+
+  <div id="lasso" class="hidden">
+    <div class="lasso-box">
+      <h2>🤠 Бросай лассо!</h2>
+      <p id="lasso-who"></p>
+      <p><span id="lasso-temper"></span> <span id="lasso-bait"></span></p>
+      <div class="lasso-bar"><div id="lasso-zone"></div><div id="lasso-needle"></div></div>
+      <p class="small">Останови стрелку в зелёной зоне</p>
+      <button id="lasso-throw" class="btn big orange">Бросить! (Пробел)</button>
+    </div>
+  </div>
+
+  <div id="modal" class="hidden">
+    <div class="modal-box">
+      <div class="modal-head"><h2 id="modal-title"></h2><button id="modal-close" class="x">✕</button></div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="js/genetics.js"></script>
+  <script src="js/horses.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/draw.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+  <script>Game.start();</script>
+</body>
+</html>
