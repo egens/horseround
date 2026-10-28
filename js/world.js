@@ -58,6 +58,32 @@ const World = (() => {
   const SELL = { x: 1190, y: 700, w: 130, h: 66, name: 'Продажа лошадей' };
   const SHOP = { x: 1190, y: 900, w: 130, h: 66, name: 'Корм и амуниция' };
 
+  // Конкурное поле: 8 препятствий, ворота сверху слева
+  const JUMPF = { x: 140, y: 1170, w: 1360, h: 620 };
+  const JUMPF_GATE = { x1: JUMPF.x + 70, x2: JUMPF.x + 190 };
+  // a — направление прыжка (0 = вправо), type — вид препятствия
+  const COURSE = [
+    { fx: 0.17, fy: 0.80, a: 0, type: 'cross', name: 'крестовина' },
+    { fx: 0.40, fy: 0.80, a: 0, type: 'vertical', name: 'вертикаль' },
+    { fx: 0.64, fy: 0.80, a: 0, type: 'oxer', name: 'оксер' },
+    { fx: 0.90, fy: 0.50, a: -Math.PI / 2, type: 'wall', name: 'стенка' },
+    { fx: 0.66, fy: 0.20, a: Math.PI, type: 'vertical', name: 'вертикаль' },
+    { fx: 0.42, fy: 0.20, a: Math.PI, type: 'oxer', name: 'оксер' },
+    { fx: 0.40, fy: 0.52, a: 0, type: 'vertical', name: 'вертикаль' },
+    { fx: 0.66, fy: 0.52, a: 0, type: 'triple', name: 'тройник' },
+  ].map((o, i) => Object.assign(o, {
+    n: i + 1, x: JUMPF.x + o.fx * JUMPF.w, y: JUMPF.y + o.fy * JUMPF.h, half: 46,
+  }));
+
+  // Фонари: светят ночью
+  const LAMPS = [
+    { x: 100, y: 250 }, { x: 900, y: 250 }, { x: 900, y: 400 },
+    { x: 130, y: 625 }, { x: 975, y: 625 }, { x: 130, y: 1065 }, { x: 975, y: 1065 },
+    { x: 1180, y: 560 }, { x: 1360, y: 560 },
+    { x: 1350, y: 690 }, { x: 1350, y: 890 },
+    { x: 120, y: 1150 }, { x: 1520, y: 1150 }, { x: 120, y: 1810 }, { x: 1520, y: 1810 },
+  ];
+
   // Большое поле с табуном
   const FIELD = { x: 1760, y: 100, w: 1940, h: 2200 };
   const POND = { x: 2780, y: 1650, rx: 210, ry: 130 };
@@ -82,7 +108,7 @@ const World = (() => {
   const TREES = [], FLOWERS = [];
   (function decorate() {
     const r = rng(42);
-    const busy = (x, y) => inRect(x, y, STABLE, 60) || inRect(x, y, ARENA, 70) || inRect(x, y, PADDOCK, 60) ||
+    const busy = (x, y) => inRect(x, y, STABLE, 60) || inRect(x, y, JUMPF, 70) || (x < 300 && y > 820 && y < 1200) || inRect(x, y, ARENA, 70) || inRect(x, y, PADDOCK, 60) ||
       inRect(x, y, SELL, 90) || inRect(x, y, SHOP, 90) || inPond(x, y, 70) ||
       (x > 860 && x < 1000 && y > 260 && y < 640) || (x > 900 && x < 1850 && y > 540 && y < 660) || (x > 1060 && x < 1170 && y > 560 && y < 1060);
     let tries = 0;
@@ -128,6 +154,12 @@ const World = (() => {
     SOLIDS.push({ x: P.x + P.w - f / 2, y: P.y, w: f, h: P.h });
     SOLIDS.push({ x: P.x - f / 2, y: P.y + P.h - f / 2, w: PADDOCK_GATE.x1 - P.x + f / 2, h: f });
     SOLIDS.push({ x: PADDOCK_GATE.x2, y: P.y + P.h - f / 2, w: P.x + P.w - PADDOCK_GATE.x2 + f / 2, h: f });
+    const J = JUMPF;
+    SOLIDS.push({ x: J.x - f / 2, y: J.y - f / 2, w: JUMPF_GATE.x1 - J.x + f / 2, h: f });
+    SOLIDS.push({ x: JUMPF_GATE.x2, y: J.y - f / 2, w: J.x + J.w - JUMPF_GATE.x2 + f / 2, h: f });
+    SOLIDS.push({ x: J.x - f / 2, y: J.y, w: f, h: J.h });
+    SOLIDS.push({ x: J.x + J.w - f / 2, y: J.y, w: f, h: J.h });
+    SOLIDS.push({ x: J.x - f / 2, y: J.y + J.h - f / 2, w: J.w + f, h: f });
     SOLIDS.push({ x: SELL.x, y: SELL.y, w: SELL.w, h: SELL.h });
     SOLIDS.push({ x: SHOP.x, y: SHOP.y, w: SHOP.w, h: SHOP.h });
   })();
@@ -168,7 +200,7 @@ const World = (() => {
 
   return {
     W, H, STABLE, STALL_W, STALL_H, AISLE_Y1, AISLE_Y2, stallRect, stallSpot,
-    ARENA, GATE_A, LETTERS, letterTarget, CAV, PADDOCK, PADDOCK_GATE, SELL, SHOP, FIELD, POND,
+    ARENA, GATE_A, LETTERS, letterTarget, CAV, JUMPF, JUMPF_GATE, COURSE, LAMPS, PADDOCK, PADDOCK_GATE, SELL, SHOP, FIELD, POND,
     TREES, FLOWERS, SOLIDS, collide, inRect, inPond, rng,
   };
 })();

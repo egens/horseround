@@ -29,9 +29,10 @@ const Draw = (() => {
     ctx.translate(x, y);
     ctx.rotate(ang);
     ctx.scale(s, s);
-    if (o.lift) ctx.scale(1.06, 1.06);
-
-    if (!o.noShadow) fillEll(ctx, 3, 5, 44, 18, 'rgba(0,0,0,0.18)');
+    // lift: 0..1 — насколько лошадь в воздухе (прыжок)
+    const lift = typeof o.lift === 'number' ? o.lift : o.lift ? 0.35 : 0;
+    if (!o.noShadow) fillEll(ctx, 3 + lift * 16, 5 + lift * 16, 44 - lift * 6, 18 - lift * 3, `rgba(0,0,0,${0.18 - lift * 0.06})`);
+    if (lift) ctx.scale(1 + lift * 0.2, 1 + lift * 0.2);
 
     // ноги: по диагонали в такт; сверху видны в основном копыта
     const legs = [[15, -1], [15, 1], [-18, -1], [-18, 1]];
@@ -293,6 +294,7 @@ const Draw = (() => {
       [[860, 310], [940, 310], [940, 600], [1275, 600], [1275, 540]],
       [[1275, 600], [1650, 600], [1800, 560]],
       [[120, 310], [70, 310], [70, 850], [140, 850]],
+      [[70, 850], [70, 1120], [270, 1120], [270, 1180]],
       [[1110, 600], [1110, 1000]],
       [[960, 850], [1110, 850]],
     ];
@@ -435,9 +437,11 @@ const Draw = (() => {
       }
     };
     const { x, y, w, h } = r;
-    seg(x, y, x + w, y);
+    if (gate.side === 'top') { seg(x, y, gate.a, y); seg(gate.b, y, x + w, y); }
+    else seg(x, y, x + w, y);
     seg(x + w, y, x + w, y + h);
     if (gate.side === 'bottom') { seg(x, y + h, gate.a, y + h); seg(gate.b, y + h, x + w, y + h); seg(x, y, x, y + h); }
+    else if (gate.side === 'top') { seg(x, y + h, x + w, y + h); seg(x, y, x, y + h); }
     else { seg(x, y + h, x + w, y + h); seg(x, y, x, gate.a); seg(x, gate.b, x, y + h); }
   }
 
@@ -511,6 +515,144 @@ const Draw = (() => {
       ctx.beginPath(); ell(ctx, tp.x, tp.y, pulse, pulse); ctx.stroke();
     }
     label(ctx, '🏇 МАНЕЖ', A.x + A.w * 0.32, A.y - 26, 20, '#5a3412');
+  }
+
+  /* ---------- конкурное поле ---------- */
+  const RAIL = { cross: ['#1c7ed6', '#fff'], vertical: ['#e03131', '#fff'], oxer: ['#2b8a3e', '#fff'], triple: ['#f08c00', '#fff'], wall: ['#c2410c', '#fff'] };
+  function rail(ctx, x, half, colors, w = 6) {
+    const n = 8, seg = (half * 2) / n;
+    for (let k = 0; k < n; k++) {
+      ctx.fillStyle = colors[k % 2];
+      ctx.fillRect(x - w / 2, -half + k * seg, w, seg + 0.5);
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - w / 2, -half, w, half * 2);
+  }
+  function obstacle(ctx, o, st, current) {
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    ctx.rotate(o.a);
+    const half = o.half, col = RAIL[o.type];
+    if (current) {
+      ctx.fillStyle = 'rgba(255,212,59,0.35)';
+      ctx.beginPath(); ell(ctx, 0, 0, 34, half + 16); ctx.fill();
+    }
+    // тень
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(-12, -half, 30, half * 2);
+    const knocked = st === 'hit';
+    if (o.type === 'wall') {
+      ctx.fillStyle = '#b5532d';
+      ctx.fillRect(-7, -half, 14, half * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1;
+      for (let yy = -half; yy < half; yy += 8) { ctx.beginPath(); ctx.moveTo(-7, yy); ctx.lineTo(7, yy); ctx.stroke(); }
+      if (knocked) { ctx.fillStyle = '#b5532d'; ctx.fillRect(9, -half * 0.4, 9, 18); }
+    } else if (o.type === 'cross') {
+      ctx.save(); ctx.rotate(knocked ? 0 : 0.35); rail(ctx, 0, half - 4, col); ctx.restore();
+      ctx.save(); ctx.rotate(knocked ? 0.1 : -0.35); ctx.translate(knocked ? 16 : 0, 0); rail(ctx, 0, half - 4, col); ctx.restore();
+    } else {
+      const xs = o.type === 'oxer' ? [-8, 8] : o.type === 'triple' ? [-12, 0, 12] : [0];
+      xs.forEach((xx, i) => {
+        if (knocked && i === xs.length - 1) { ctx.save(); ctx.translate(xx + 16, 4); ctx.rotate(0.18); rail(ctx, 0, half - 2, col); ctx.restore(); }
+        else rail(ctx, xx, half - 2, col);
+      });
+    }
+    // стойки
+    ctx.fillStyle = '#f8f9fa';
+    ctx.strokeStyle = '#868e96';
+    for (const yy of [-half - 5, half + 5]) { ctx.fillRect(-14, yy - 4, 28, 8); ctx.strokeRect(-14, yy - 4, 28, 8); }
+    // флажки: красный справа, белый слева — как на настоящих соревнованиях
+    ctx.fillStyle = '#e03131';
+    ctx.beginPath(); ctx.moveTo(-12, half + 9); ctx.lineTo(-2, half + 13); ctx.lineTo(-12, half + 17); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.moveTo(-12, -half - 9); ctx.lineTo(-2, -half - 13); ctx.lineTo(-12, -half - 17); ctx.fill();
+    ctx.restore();
+    // номер
+    const nx = o.x + Math.cos(o.a + Math.PI / 2) * (half + 30) - Math.cos(o.a) * 10;
+    const ny = o.y + Math.sin(o.a + Math.PI / 2) * (half + 30) - Math.sin(o.a) * 10;
+    ctx.fillStyle = st === 'ok' ? '#2b8a3e' : st === 'hit' ? '#c92a2a' : current ? '#f59f00' : '#ffffff';
+    ctx.strokeStyle = '#343a40';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ell(ctx, nx, ny, 12, 12); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = st || current ? '#fff' : '#212529';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(o.n), nx, ny + 1);
+    if (current) {
+      // стрелка направления прыжка
+      ctx.save();
+      ctx.translate(o.x - Math.cos(o.a) * 60, o.y - Math.sin(o.a) * 60);
+      ctx.rotate(o.a);
+      ctx.fillStyle = 'rgba(245,159,0,0.85)';
+      ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-6, -10); ctx.lineTo(-6, 10); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+  function jumpField(ctx, game) {
+    const J = World.JUMPF;
+    ctx.fillStyle = 'rgba(60,110,30,0.16)';
+    ctx.fillRect(J.x, J.y, J.w, J.h);
+    // следы маршрута
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 12]);
+    ctx.beginPath();
+    World.COURSE.forEach((o, i) => (i ? ctx.lineTo(o.x, o.y) : ctx.moveTo(o.x - 120, o.y)));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const ex = game.exercise();
+    World.COURSE.forEach((o, i) => {
+      const st = ex && ex.type === 'jump' ? ex.jumps[i] : null;
+      obstacle(ctx, o, st, ex && ex.type === 'jump' && ex.i === i);
+    });
+    fenceRect(ctx, J, { side: 'top', a: World.JUMPF_GATE.x1, b: World.JUMPF_GATE.x2 }, '#ffffff', '#dee2e6');
+    label(ctx, '🏆 КОНКУРНОЕ ПОЛЕ', J.x + J.w / 2, J.y - 22, 20, '#5a3412');
+  }
+
+  /* ---------- фонари и ночь ---------- */
+  function lamps(ctx, dark, t) {
+    for (const l of World.LAMPS) {
+      fillEll(ctx, l.x + 3, l.y + 4, 6, 4, 'rgba(0,0,0,0.2)');
+      ctx.fillStyle = '#343a40';
+      ctx.fillRect(l.x - 2, l.y - 2, 4, 4);
+      fillEll(ctx, l.x, l.y, 5, 5, dark > 0.2 ? '#ffe8a3' : '#adb5bd');
+    }
+  }
+  // затемнение с «дырками» от фонарей; lights — в экранных координатах
+  let darkCanvas = null;
+  function night(ctx, w, h, dark, tint, lights, t) {
+    if (dark <= 0.01 && !tint) return;
+    if (!darkCanvas) darkCanvas = document.createElement('canvas');
+    if (darkCanvas.width !== w || darkCanvas.height !== h) { darkCanvas.width = w; darkCanvas.height = h; }
+    const d = darkCanvas.getContext('2d');
+    d.globalCompositeOperation = 'source-over';
+    d.clearRect(0, 0, w, h);
+    d.fillStyle = `rgba(12,18,52,${dark})`;
+    d.fillRect(0, 0, w, h);
+    if (tint) { d.fillStyle = tint; d.fillRect(0, 0, w, h); }
+    d.globalCompositeOperation = 'destination-out';
+    for (const l of lights) {
+      const g = d.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(0.5, 'rgba(0,0,0,0.7)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      d.fillStyle = g;
+      d.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2);
+    }
+    ctx.drawImage(darkCanvas, 0, 0);
+    if (dark > 0.15) {
+      ctx.globalCompositeOperation = 'lighter';
+      for (const l of lights) {
+        const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * 0.6);
+        g.addColorStop(0, `rgba(255,190,90,${0.18 * dark})`);
+        g.addColorStop(1, 'rgba(255,190,90,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
   }
 
   function paddock(ctx) {
@@ -610,5 +752,5 @@ const Draw = (() => {
     mctx.strokeRect(v.x * k, v.y * k, v.w * k, v.h * k);
   }
 
-  return { horse, girl, ground, stable, arena, paddock, wagon, treeTrunk, treeTop, minimap, label, fillEll };
+  return { horse, girl, ground, stable, arena, jumpField, lamps, night, paddock, wagon, treeTrunk, treeTop, minimap, label, fillEll };
 })();

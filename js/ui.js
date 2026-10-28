@@ -21,7 +21,7 @@ const UI = (() => {
   function init(game) {
     G = game;
     el = {
-      money: $('hud-money'), count: $('hud-count'), medals: $('hud-medals'), hint: $('hint'),
+      money: $('hud-money'), count: $('hud-count'), clock: $('hud-clock'), gfx: $('btn-gfx'), medals: $('hud-medals'), hint: $('hint'),
       prompt: $('prompt'), lassoBtn: $('btn-lasso'), ride: $('ride'), rideName: $('ride-name'),
       energy: $('ride-energy'), lead: $('lead'), leadName: $('lead-name'), exercise: $('exercise'),
       exTitle: $('ex-title'), exLine: $('ex-line'), exHint: $('ex-hint'), exLetter: $('ex-letter'),
@@ -30,6 +30,7 @@ const UI = (() => {
     };
     $('btn-horses').onclick = () => openStable(G.atFarm());
     $('btn-inv').onclick = openInventory;
+    el.gfx.onclick = () => G.act.setGfx(G.S.gfx === 'voxel' ? '2d' : 'voxel');
     $('btn-help').onclick = openHelp;
     $('btn-sound').onclick = e => { e.currentTarget.textContent = Sound.toggle() ? '🔊' : '🔇'; };
     el.prompt.onclick = () => lastPrompt && lastPrompt.fn();
@@ -50,6 +51,8 @@ const UI = (() => {
   function updateHud(d) {
     set('money', el.money, 'textContent', `🪙 ${d.money}`);
     set('count', el.count, 'textContent', `🐴 ${d.count}/${d.max}`);
+    set('clock', el.clock, 'textContent', d.clock);
+    set('gfx', el.gfx, 'textContent', d.gfx === 'voxel' ? '🗺️ 2D' : '🧊 3D');
     const md = ['gold', 'silver', 'bronze'].filter(k => d.stats[k]).map(k => `${MEDALS[k]}${d.stats[k]}`).join(' ');
     set('medals', el.medals, 'textContent', md);
     show(el.medals, !!md);
@@ -73,7 +76,8 @@ const UI = (() => {
 
     const x = d.exercise;
     show(el.exercise, !!x);
-    show(el.lift, !!(x && x.title === 'Кавалетти'));
+    show(el.lift, !!(x && x.lift));
+    if (x && x.lift) set('lift', el.lift, 'textContent', x.liftLabel);
     if (x) {
       set('exTitle', el.exTitle, 'textContent', x.title);
       set('exLine', el.exLine, 'textContent', x.line);
@@ -353,6 +357,38 @@ const UI = (() => {
     });
   }
 
+  function openJumping() {
+    open(() => {
+      const m = G.mounted();
+      if (!m) return { title: 'Конкур', html: '<p>Сначала сядь на лошадь.</p>' };
+      const comfy = G.comfortHeight(m);
+      const html = `<p>Конкур — это прыжки через препятствия по порядку номеров. Едь <b>галопом</b>, проходи препятствия в сторону стрелки
+        (красный флажок справа, белый — слева) и жми <b>«Прыжок!»</b> (Пробел) прямо перед жердями.</p>
+        <p>За повал жерди — 4 штрафных очка, за отказ — тоже 4 (после трёх отказов — исключение). Норма времени — ${G.JUMP_NORM} секунд:
+        за каждые начатые 4 секунды сверху — 1 штрафное очко.</p>
+        <p><b>${esc(m.name)}</b>: прыжки ${Horses.skill(m, 'jump')}, энергия ${Math.round(m.energy)}%. Удобная высота — около <b>${comfy} см</b>.</p>
+        <div class="train">${G.JUMP_HEIGHTS.map(h => `<button class="card" data-act="jump" data-arg="${h}"><b>${h} см</b>
+          <span>${h <= comfy ? 'по силам ✔' : h - comfy <= 15 ? 'сложно, но можно' : 'очень высоко!'}${h === 60 ? ' · можно рысью' : ''}</span></button>`).join('')}</div>`;
+      return { title: '🏆 Конкур', html };
+    });
+  }
+
+  function jumpResult(r) {
+    open(() => ({
+      title: `Конкур ${r.height} см: результат`,
+      html: `<div class="result"><div class="medal">${r.medal ? MEDALS[r.medal] : r.eliminated ? '🚫' : '🙂'}</div>
+        ${r.eliminated ? '<p class="pct">Исключение</p><p>Три отказа — так бывает. Подъезжай к препятствию галопом и не останавливайся!</p>'
+        : `<p class="pct">${r.faults} штр. оч.</p>
+        <p>${r.faults === 0 ? 'Чистый маршрут! Браво!' : r.faults <= 4 ? 'Почти идеально!' : 'Хороший опыт — тренируйся ещё!'}</p>`}
+        <table class="marks">
+          <tr><td>Чисто пройдено</td><td><b>${r.clean} из ${r.total}</b></td></tr>
+          <tr><td>Время</td><td><b>${r.t.toFixed(1)} с</b> (норма ${r.norm} с${r.over ? `, +${r.over} за время` : ''})</td></tr>
+        </table>
+        <p>Награда: <b>${r.money} 🪙</b> · Прыжки: ${r.skill}</p>
+        <button class="btn green big" data-act="close">Отлично!</button></div>`,
+    }));
+  }
+
   function result(title, clean, total, money, medal, extra) {
     open(() => ({
       title: `${title}: результат`,
@@ -397,7 +433,15 @@ const UI = (() => {
           <li>🚧 <b>Кавалетти</b> и 🎠 <b>выездка</b> в манеже — за них дают монеты и медали, а лошадь становится лучше.</li>
           <li>💕 <b>Скрещивать</b> кобылу и жеребца. Окрас жеребёнка считается по настоящим генам: рыжая, гнедая, вороная, соловая, буланая, изабелловая, саврасая, мышастая, серая в яблоках, пегая, чубарая, чалая, серебристая…</li>
           <li>💰 <b>Повозки:</b> одна покупает лошадей, в другой продаются корм и амуниция.</li>
+          <li>🏆 <b>Конкур</b> на конкурном поле: 8 препятствий, высота от 60 до 120 см.</li>
+          <li>🌙 <b>День и ночь</b> сменяют друг друга (сутки — 8 минут). Ночью табун спит, и подкрасться к лошадям легче.</li>
         </ul>
+        <h4>Графика</h4>
+        <div class="gfx-pick">
+          <button class="card ${G.S.gfx !== 'voxel' ? 'on' : ''}" data-act="gfx" data-arg="2d"><b>🗺️ Вид сверху (2D)</b><span>Рисованная карта. Работает везде, даже без интернета.</span></button>
+          <button class="card ${G.S.gfx === 'voxel' ? 'on' : ''}" data-act="gfx" data-arg="voxel"><b>🧊 Воксели (3D)</b><span>Объёмный мир из кубиков с тенями и фонарями. Нужен интернет для загрузки.</span></button>
+        </div>
+        <p>Переключать графику можно в любой момент кнопкой вверху.</p>
         <p>Игра сохраняется сама.</p>
         <button class="btn green big" data-act="close">Играть!</button>
         <button class="btn ghost small" data-act="reset">Начать заново</button>
@@ -455,6 +499,8 @@ const UI = (() => {
         break;
       }
       case 'train': G.act.startExercise(arg); break;
+      case 'jump': G.act.startJumping(+arg); break;
+      case 'gfx': G.act.setGfx(arg); render(); break;
       case 'reset':
         if (!resetArm) { resetArm = true; b.textContent = 'Точно? Всё сотрётся! Нажми ещё раз'; break; }
         resetArm = false;
@@ -466,6 +512,6 @@ const UI = (() => {
 
   return {
     init, updateHud, toast, closeModal, isModalOpen, openStable, openShop, openSell, openInventory,
-    openHelp, openTraining, result, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
+    openHelp, openTraining, openJumping, jumpResult, result, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
   };
 })();
