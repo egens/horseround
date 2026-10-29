@@ -108,7 +108,7 @@ const World = (() => {
   const TREES = [], FLOWERS = [];
   (function decorate() {
     const r = rng(42);
-    const busy = (x, y) => inRect(x, y, STABLE, 60) || inRect(x, y, JUMPF, 70) || (x < 300 && y > 820 && y < 1200) || inRect(x, y, ARENA, 70) || inRect(x, y, PADDOCK, 60) ||
+    const busy = (x, y) => Math.hypot(x - 1840, y - 560) < 280 || inRect(x, y, STABLE, 60) || inRect(x, y, JUMPF, 70) || (x < 300 && y > 820 && y < 1200) || inRect(x, y, ARENA, 70) || inRect(x, y, PADDOCK, 60) ||
       inRect(x, y, SELL, 90) || inRect(x, y, SHOP, 90) || inPond(x, y, 70) ||
       (x > 860 && x < 1000 && y > 260 && y < 640) || (x > 900 && x < 1850 && y > 540 && y < 660) || (x > 1060 && x < 1170 && y > 560 && y < 1060);
     let tries = 0;

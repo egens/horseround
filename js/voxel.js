@@ -523,6 +523,66 @@ const Voxel = (() => {
     });
   }
 
+  /* ---------- скачки, зайчики ---------- */
+  let startPost = null;
+  const bunnyGeo = {}, bunnyPool = [];
+  function bunnyGeometry(c, belly) {
+    const k = c + belly;
+    if (bunnyGeo[k]) return bunnyGeo[k];
+    const cells = new Map();
+    const fill = (x0, x1, y0, y1, z0, z1, col) => { for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) cells.set(key3(x, y, z), col); };
+    fill(-2, 1, 0, 2, -1, 1, c);       // тело
+    fill(-1, 1, 0, 0, -1, 1, belly);
+    fill(2, 3, 2, 3, -1, 1, c);        // голова
+    fill(2, 2, 4, 6, -1, -1, c);       // уши
+    fill(2, 2, 4, 6, 1, 1, c);
+    fill(-3, -3, 1, 2, 0, 0, '#ffffff'); // хвостик
+    cells.set(key3(4, 3, 0), '#e07a8a');
+    cells.set(key3(3, 3, -2), '#1a1412'); cells.set(key3(3, 3, 2), '#1a1412');
+    bunnyGeo[k] = voxelGeometry(cells, 0.32, 3);
+    return bunnyGeo[k];
+  }
+  function updateExtras(game, t) {
+    if (!startPost) {
+      const st = Events.START, list = [box(st.x * K, 2, st.y * K, 0.4, 4, 0.4, '#495057')];
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) list.push(box(st.x * K + 0.45 + i * 0.5, 3.5 - j * 0.5, st.y * K, 0.5, 0.5, 0.1, (i + j) % 2 ? '#111111' : '#ffffff'));
+      startPost = meshOf(boxGeometry(list));
+      scene.add(startPost);
+    }
+    const G2 = game.gates ? game.gates() : null;
+    rebuild('gates', G2 ? `${G2.id}|${G2.next}` : 'none', () => {
+      const group = new T.Group();
+      if (!G2) return group;
+      G2.list.forEach((g, i) => {
+        const list = [], half = 55 * K;
+        for (const z of [-half, half]) list.push(box(0, 2, z, 0.5, 4, 0.5, '#f8f9fa'));
+        const n = 10, seg = (half * 2) / n;
+        for (let k = 0; k < n; k++) {
+          const c = g.finish ? (k % 2 ? '#111111' : '#ffffff') : (k % 2 ? '#ffffff' : i < G2.next ? '#2b8a3e' : i === G2.next ? '#ffd43b' : '#1c7ed6');
+          list.push(box(0, 3.7, -half + seg * (k + 0.5), 0.2, 0.6, seg, c));
+        }
+        const m = meshOf(boxGeometry(list));
+        m.position.set(g.x * K, 0, g.y * K);
+        m.rotation.y = -g.a;
+        group.add(m);
+        const sp = textSprite(g.finish ? 'F' : String(g.n), '#212529', i === G2.next ? '#ffd43b' : '#ffffff');
+        sp.position.set(g.x * K, 5.4, g.y * K); sp.scale.set(2, 2, 1);
+        group.add(sp);
+      });
+      return group;
+    });
+    const bs = game.bunnies ? game.bunnies() : [];
+    bs.forEach((b, i) => {
+      let m = bunnyPool[i];
+      if (!m) { m = new T.Mesh(bunnyGeometry(b.color, b.belly), mat); m.castShadow = true; scene.add(m); bunnyPool[i] = m; }
+      m.geometry = bunnyGeometry(b.color, b.belly);
+      m.visible = b.fade > 0.05;
+      m.position.set(b.x * K, b.z * K, b.y * K);
+      m.rotation.y = -b.angle;
+    });
+    for (let i = bs.length; i < bunnyPool.length; i++) bunnyPool[i].visible = false;
+  }
+
   /* ---------- инициализация ---------- */
   function init() {
     T = window.THREE;
@@ -648,6 +708,15 @@ const Voxel = (() => {
     scene.fog.color = sky;
     hemi.intensity = 0.25 + 0.45 * dl;
     sun.intensity = 0.12 + 0.75 * dl;
+    // дождь: пасмурно
+    const wet = game.weather ? game.weather() : 0;
+    if (wet > 0) {
+      sun.intensity *= 1 - 0.6 * wet;
+      hemi.intensity *= 1 - 0.25 * wet;
+      sky.lerp(new T.Color('#7d8794'), wet * 0.6);
+      scene.background = sky;
+      scene.fog.color = sky;
+    }
     sun.color.set(dl > 0.2 ? (dl < 1 ? '#ffd2a1' : '#fff4dd') : '#9fb4ff');
     sun.position.set(camPos.x + 30, 70, camPos.z + 20);
     sun.target.position.set(camPos.x, 0, camPos.z);
@@ -671,6 +740,7 @@ const Voxel = (() => {
     const led = game.led();
     if (led) syncHorse(led, led.x, led.y, led.angle, { t });
     if (m) syncHorse(m, p.x, p.y, p.angle, { t, rider: game.rider(), lift: game.riderLift() });
+    for (const r of (game.rivals ? game.rivals() : [])) if (close(r.h)) syncHorse(r.h, r.h.x, r.h.y, r.h.angle, { t, rider: r.rider });
     for (const [id, e] of objs) if (!e.seen) { disposeObj(e); objs.delete(id); }
     syncGirl(p, t, !m);
 
@@ -698,6 +768,7 @@ const Voxel = (() => {
       a.needsUpdate = true;
     }
     updateCourse(game);
+    updateExtras(game, t);
     renderer.render(scene, camera);
   }
 

@@ -1075,8 +1075,10 @@ const Real = (() => {
     }
     const bark = noiseTex(128, '#5c4030', [{ c: '#3e2a1e', n: 300, line: true, w: 2, h: 14 }, { c: '#7a5a44', n: 200, line: true, w: 2, h: 10 }], 12);
     const birch = noiseTex(128, '#eceae4', [{ c: '#2b2b2b', n: 60, line: true, w: 10, h: 2 }, { c: '#bdbab2', n: 200, s: 2 }], 13);
-    scene.add(mesh(merge(trunkParts.oak), std({ map: bark, roughness: 0.95 })));
-    if (trunkParts.birch.length) scene.add(mesh(merge(trunkParts.birch), std({ map: birch, roughness: 0.9 })));
+    const oakMat = std({ map: bark, roughness: 0.95 }), birchMat = std({ map: birch, roughness: 0.9 });
+    seeThrough(oakMat); seeThrough(birchMat);
+    scene.add(mesh(merge(trunkParts.oak), oakMat));
+    if (trunkParts.birch.length) scene.add(mesh(merge(trunkParts.birch), birchMat));
     const leafMat = std({ vertexColors: true, roughness: 0.85 });
     seeThrough(leafMat);
     const leaves = mesh(merge(leafParts, true, false), leafMat);
@@ -1277,6 +1279,78 @@ const Real = (() => {
     });
   }
 
+  /* ---------- скачки и зайчики ---------- */
+  let startPost = null;
+  const bunnyPool = [];
+  function checkerTex() {
+    const c = canvas(128, 32), g = c.getContext('2d');
+    for (let i = 0; i < 16; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#111' : '#fff'; g.fillRect(i * 8, j * 8, 8, 8); }
+    return toTex(c, false);
+  }
+  function makeBunny(col, belly) {
+    const g = new T.Group();
+    const fur = std({ color: col, roughness: 0.95 }), light = std({ color: belly, roughness: 0.95 });
+    const body = mesh(new T.SphereGeometry(0.13, 14, 10), fur); body.scale.set(1.25, 0.95, 0.9); body.position.set(0, 0.13, 0); g.add(body);
+    const bel = mesh(new T.SphereGeometry(0.1, 10, 8), light); bel.scale.set(1.2, 0.8, 0.8); bel.position.set(0.03, 0.09, 0); g.add(bel);
+    const head = mesh(new T.SphereGeometry(0.075, 12, 10), fur); head.position.set(0.15, 0.22, 0); g.add(head);
+    for (const z of [-1, 1]) {
+      const ear = mesh(new T.SphereGeometry(0.03, 8, 6), fur); ear.scale.set(0.7, 3, 0.9); ear.position.set(0.12, 0.34, z * 0.03); ear.rotation.z = -0.25; ear.rotation.x = z * 0.15; g.add(ear);
+      const eye = mesh(new T.SphereGeometry(0.012, 6, 4), sharedMats().eye, false); eye.position.set(0.2, 0.24, z * 0.045); g.add(eye);
+    }
+    const tail = mesh(new T.SphereGeometry(0.045, 8, 6), std({ color: '#ffffff', roughness: 1 })); tail.position.set(-0.17, 0.16, 0); g.add(tail);
+    const nose = mesh(new T.SphereGeometry(0.012, 6, 4), std({ color: '#e07a8a' }), false); nose.position.set(0.225, 0.215, 0); g.add(nose);
+    g.userData.key = col + belly;
+    scene.add(g);
+    return g;
+  }
+  function updateExtras(game, t) {
+    if (!startPost) {
+      const st = Events.START;
+      startPost = new T.Group();
+      const post = mesh(new T.CylinderGeometry(0.06, 0.08, 3.2, 10), std({ color: '#495057', roughness: 0.5, metalness: 0.5 }));
+      post.position.y = 1.6; startPost.add(post);
+      const flag = mesh(new T.PlaneGeometry(1.1, 0.7), std({ map: checkerTex(), side: T.DoubleSide, roughness: 0.8 }), true, false);
+      flag.position.set(0.6, 2.8, 0); startPost.add(flag);
+      startPost.position.set(st.x * K, 0, st.y * K);
+      scene.add(startPost);
+      startPost.userData.flag = flag;
+    }
+    startPost.userData.flag.rotation.y = Math.sin(t * 3) * 0.2;
+    const G2 = game.gates ? game.gates() : null;
+    rebuild('gates', G2 ? `${G2.id}|${G2.next}` : 'none', () => {
+      const group = new T.Group();
+      if (!G2) return group;
+      const white = std({ color: '#f8f9fa', roughness: 0.5 });
+      const check = checkerTex();
+      G2.list.forEach((g, i) => {
+        const half = 55 * K;
+        const gg = new T.Group();
+        gg.position.set(g.x * K, 0, g.y * K);
+        gg.rotation.y = -g.a;
+        for (const z of [-half, half]) { const p = mesh(new T.CylinderGeometry(0.06, 0.07, 2.6, 10), white); p.position.set(0, 1.3, z); gg.add(p); }
+        const color = i < G2.next ? '#2b8a3e' : i === G2.next ? '#ffc400' : '#1c7ed6';
+        const bannerMat = g.finish ? std({ map: check, side: T.DoubleSide }) : std({ map: stripeTex(color, '#ffffff', 10), side: T.DoubleSide });
+        const banner = mesh(new T.PlaneGeometry(half * 2, 0.4), bannerMat, true, false);
+        banner.position.set(0, 2.4, 0); banner.rotation.y = Math.PI / 2; gg.add(banner);
+        const plate = mesh(new T.PlaneGeometry(0.5, 0.5), std({ map: textTex(g.finish ? 'F' : String(g.n), '#212529', i === G2.next ? '#ffd43b' : '#ffffff'), side: T.DoubleSide }));
+        plate.position.set(0, 2.95, 0); plate.rotation.y = Math.PI / 2; gg.add(plate);
+        gg.traverse(n => { if (n.isMesh) n.castShadow = true; });
+        group.add(gg);
+      });
+      return group;
+    });
+    const bs = game.bunnies ? game.bunnies() : [];
+    bs.forEach((b, i) => {
+      let g = bunnyPool[i];
+      if (g && g.userData.key !== b.color + b.belly) { scene.remove(g); g = null; }
+      if (!g) { g = makeBunny(b.color, b.belly); bunnyPool[i] = g; }
+      g.visible = b.fade > 0.05;
+      g.position.set(b.x * K, b.z * K * 1.5, b.y * K);
+      g.rotation.y = -b.angle;
+    });
+    for (let i = bs.length; i < bunnyPool.length; i++) bunnyPool[i].visible = false;
+  }
+
   /* ================= инициализация ================= */
   function init() {
     T = window.THREE;
@@ -1452,6 +1526,16 @@ const Real = (() => {
     U.starAmt.value = Math.max(0, 1 - dl * 1.5);
     scene.fog.color.copy(U.horizon.value);
     renderer.toneMappingExposure = 0.5 + dl * 0.4;
+    // дождь: тучи, серое небо, гуще туман
+    const wet = game.weather ? game.weather() : 0;
+    sun.intensity *= 1 - 0.75 * wet;
+    hemi.intensity *= 1 - 0.25 * wet;
+    const grey = new T.Color('#6f7a86');
+    U.top.value.lerp(grey, wet * 0.75);
+    U.horizon.value.lerp(grey, wet * 0.6);
+    U.sunCol.value.multiplyScalar(1 - wet);
+    scene.fog.color.copy(U.horizon.value);
+    scene.fog.density = 0.0085 + wet * 0.012;
 
     // фонари ночью
     const dark = 1 - dl;
@@ -1495,6 +1579,7 @@ const Real = (() => {
       const ex = game.exercise();
       syncHorse(m, p.x, p.y, p.angle, { rider: game.rider(), gait: S.player.gait, lift, liftPhase: ex && ex.type === 'jump' && ex.air > 0 ? 1 - ex.air / 0.6 : 0.5 }, dt, now);
     }
+    for (const r of (game.rivals ? game.rivals() : [])) if (close(r.h)) syncHorse(r.h, r.h.x, r.h.y, r.h.angle, { rider: r.rider, gait: r.gait }, dt, now);
     for (const [id, e] of objs) if (now - e.lastSeen > 4000) { disposeHorse(e); objs.delete(id); }
     syncGirl(p, dt, !m, S.player.shirt || '#e05a8a');
 
@@ -1506,6 +1591,7 @@ const Real = (() => {
     letterRing.visible = !!(ex && ex.type === 'dres');
     if (letterRing.visible) { const tp = World.letterTarget(ex.targetLetter); letterRing.position.set(tp.x * K, 0.05, tp.y * K); letterRing.scale.setScalar(1 + Math.sin(t * 6) * 0.1); }
     updateCourse(game);
+    updateExtras(game, t);
     updateRope(led, p, m);
     renderer.render(scene, camera);
   }

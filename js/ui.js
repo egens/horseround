@@ -113,9 +113,10 @@ const UI = (() => {
     const scroll = el.mBody.scrollTop;
     el.mBody.innerHTML = v.html;
     el.mBody.scrollTop = scroll;
+    el.mBody.querySelectorAll('canvas[data-route]').forEach(c => { if (Events.pending) Events.drawPreview(c, Events.pending); });
     el.mBody.querySelectorAll('canvas[data-hid]').forEach(c => {
       const id = +c.dataset.hid;
-      const h = G.S.horses.find(x => x.id === id) || (G.led() && G.led().id === id ? G.led() : null);
+      const h = G.findHorse(id);
       if (h) portrait(c, h);
     });
   }
@@ -207,7 +208,7 @@ const UI = (() => {
             <tr><td>Гены окраса</td><td><code>${Genetics.genotypeText(h.g)}</code></td></tr>
             <tr><td>Нрав</td><td>${h.temper < 0.35 ? 'спокойный 😌' : h.temper < 0.6 ? 'обычный 🙂' : 'горячий 🔥'}</td></tr>
             <tr><td>Денник</td><td>№${h.stall + 1}</td></tr>
-            <tr><td>Цена</td><td>${Horses.price(h)} 🪙</td></tr>
+            <tr><td>Цена</td><td>${G.sellPrice(h)} 🪙</td></tr>
           </table>
           <div class="badges">${statusBadges(h)}</div>
         </div>
@@ -303,7 +304,8 @@ const UI = (() => {
   function openSell() {
     open(() => {
       const S = G.S, near = G.nearSell();
-      let html = near ? '<p>Торговец купит твоих лошадей. Цена зависит от навыков, редкости окраса, возраста и ухода.</p>'
+      let html = Events.fair() ? '<p class="note">🎪 Сейчас ярмарка — цены на 30% выше!</p>' : '';
+      html += near ? '<p>Торговец купит твоих лошадей. Цена зависит от навыков, редкости окраса, возраста и ухода.</p>'
         : '<p class="note">Подойди к повозке «Продажа лошадей», чтобы продать.</p>';
       const list = [];
       if (G.led()) list.push({ h: G.led(), led: true });
@@ -312,7 +314,7 @@ const UI = (() => {
       html += '<div class="stalls">';
       for (const { h, led } of list) {
         const ph = Horses.pheno(h);
-        const price = led ? Math.round(Horses.price(h) * 0.85 / 5) * 5 : Horses.price(h);
+        const price = G.sellPrice(h, !!led);
         html += `<div class="stall"><canvas width="150" height="78" data-hid="${h.id}"></canvas>
           <div class="nm">${sexIcon(h)} ${esc(h.name)} ${led ? '<small>(пойманная)</small>' : ''}</div>
           <div class="sub">${esc(ph.name)}</div><div class="sub">${esc(Genetics.BREEDS[h.breed].name)}, ${Horses.ageText(h)}</div>
@@ -335,7 +337,7 @@ const UI = (() => {
       html += `<span class="chip">🪢 Простое лассо</span></div>
         <h4>Моя кофта</h4><div class="swatches">${shirts.map(c => `<button class="sw ${S.player.shirt === c ? 'on' : ''}" style="background:${c}" data-act="shirt" data-c="${c}"></button>`).join('')}</div>
         <h4>Достижения</h4><div class="row">
-        <span class="chip">🤠 Поймано: ${st.caught}</span><span class="chip">🍼 Жеребят: ${st.foals}</span><span class="chip">💰 Продано: ${st.sold}</span>
+        <span class="chip">🤠 Поймано: ${st.caught}</span><span class="chip">🐰 Зайчиков: ${st.bunnies || 0}</span><span class="chip">🏁 Скачек: ${st.races || 0}, побед: ${st.wins || 0}</span><span class="chip">🍼 Жеребят: ${st.foals}</span><span class="chip">💰 Продано: ${st.sold}</span>
         <span class="chip">🥇 ${st.gold}</span><span class="chip">🥈 ${st.silver}</span><span class="chip">🥉 ${st.bronze}</span></div>`;
       return { title: '🎒 Рюкзак', html };
     });
@@ -389,6 +391,46 @@ const UI = (() => {
     }));
   }
 
+  /* ---------- скачки ---------- */
+  function openRace(info) {
+    if (!info) return;
+    open(() => {
+      const m = G.mounted();
+      const info2 = Events.pending || info;
+      const rows = info2.rivals.map(r => {
+        const ph = Horses.pheno(r.h);
+        return `<div class="stall"><canvas width="150" height="78" data-hid="${r.h.id}"></canvas>
+          <div class="nm"><span style="color:${r.look.shirt}">●</span> ${esc(r.rider)}</div>
+          <div class="sub">на лошади <b>${esc(r.h.name)}</b></div>
+          <div class="sub">${esc(Genetics.BREEDS[r.h.breed].name)}, ${esc(ph.name)}</div>
+          <div class="sub">скорость: ${Horses.skill(r.h, 'speed')}</div></div>`;
+      }).join('');
+      const html = `${info2.bonus > 1 ? '<p class="note">🏁 Приглашение: призы сегодня двойные!</p>' : ''}
+        <p>Трасса проложена по большому полю: <b>${info2.track.gates.length} ворот</b>, проходить по порядку, последние — финиш у старта.
+        Скачи <b>галопом</b> и держись жёлтой стрелки.</p>
+        <div class="race-top"><canvas width="360" height="300" data-route="1" class="route"></canvas>
+          <div><p>Твоя лошадь: <b>${esc(m ? m.name : '')}</b> · скорость ${m ? Horses.skill(m, 'speed') : 0} · энергия ${m ? Math.round(m.energy) : 0}%</p>
+          <p>Призы: 🥇 ${100 * info2.bonus} · 🥈 ${50 * info2.bonus} · 🥉 ${25 * info2.bonus} · 4-е место — ${5 * info2.bonus} 🪙</p>
+          <div class="row"><button class="btn green big" data-act="race-go">🏁 На старт!</button>
+          <button class="btn" data-act="race-new">🔀 Другая трасса</button></div></div></div>
+        <h4>Соперники</h4><div class="stalls">${rows}</div>`;
+      return { title: '🏁 Скачки', html };
+    });
+  }
+
+  function raceResult(r) {
+    const names = ['первое', 'второе', 'третье', 'четвёртое'];
+    open(() => ({
+      title: '🏁 Скачки: результат',
+      html: `<div class="result"><div class="medal">${r.medal ? MEDALS[r.medal] : '🙂'}</div>
+        <p class="pct">${names[r.place - 1]} место!</p>
+        <p>${r.place === 1 ? 'Победа! Ты обогнала всех!' : r.place <= 3 ? 'Отличный результат!' : 'В следующий раз получится — тренируй скорость!'}</p>
+        <table class="marks">${r.table.map((x, i) => `<tr${x.me ? ' style="font-weight:bold"' : ''}><td>${i + 1}.</td><td>${esc(x.name)}</td><td>${esc(x.horse)}</td><td>${x.done != null ? x.done.toFixed(1) + ' с' : 'ещё скачет'}</td></tr>`).join('')}</table>
+        <p>Время: <b>${r.time.toFixed(1)} с</b> · приз: <b>${r.prize} 🪙</b>${r.bonus > 1 ? ' (двойной!)' : ''}</p>
+        <button class="btn green big" data-act="close">Ура!</button></div>`,
+    }));
+  }
+
   function result(title, clean, total, money, medal, extra) {
     open(() => ({
       title: `${title}: результат`,
@@ -434,6 +476,8 @@ const UI = (() => {
           <li>💕 <b>Скрещивать</b> кобылу и жеребца. Окрас жеребёнка считается по настоящим генам: рыжая, гнедая, вороная, соловая, буланая, изабелловая, саврасая, мышастая, серая в яблоках, пегая, чубарая, чалая, серебристая…</li>
           <li>💰 <b>Повозки:</b> одна покупает лошадей, в другой продаются корм и амуниция.</li>
           <li>🏆 <b>Конкур</b> на конкурном поле: 8 препятствий, высота от 60 до 120 см.</li>
+          <li>🏁 <b>Скачки</b>: подъезжай верхом к клетчатому столбу у входа в поле. Каждый раз — новая трасса и три соперника.</li>
+          <li>🎲 <b>Случайные события</b>: дождь (а после него радуга), зайчики с подарками, подкова на счастье, ярмарка, потерявшаяся лошадь и приглашения на скачки с двойным призом.</li>
           <li>🌙 <b>День и ночь</b> сменяют друг друга (сутки — 8 минут). Ночью табун спит, и подкрасться к лошадям легче.</li>
         </ul>
         <h4>Графика</h4>
@@ -501,6 +545,8 @@ const UI = (() => {
       }
       case 'train': G.act.startExercise(arg); break;
       case 'jump': G.act.startJumping(+arg); break;
+      case 'race-go': Events.startRace(); break;
+      case 'race-new': Events.prepareRace(); render(); break;
       case 'gfx': G.act.setGfx(arg); render(); break;
       case 'reset':
         if (!resetArm) { resetArm = true; b.textContent = 'Точно? Всё сотрётся! Нажми ещё раз'; break; }
@@ -513,6 +559,6 @@ const UI = (() => {
 
   return {
     init, updateHud, toast, closeModal, isModalOpen, openStable, openShop, openSell, openInventory,
-    openHelp, openTraining, openJumping, jumpResult, result, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
+    openHelp, openTraining, openJumping, jumpResult, openRace, raceResult, result, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
   };
 })();
