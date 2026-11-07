@@ -168,6 +168,8 @@ const UI = (() => {
     if (h.age < 3) b.push('🍼 малыш');
     if (h.hunger < 25) b.push('😟 голодная');
     if (h.clean < 25) b.push('🟫 грязная');
+    if ((h.mud || 0) > 25) b.push('🟤 ноги в грязи');
+    if (h.state === 'market') b.push(`🏷️ на рынке (${h.ask} 🪙)`);
     return b.map(x => `<span class="badge">${x}</span>`).join('');
   }
 
@@ -402,6 +404,118 @@ const UI = (() => {
         ${n > 1 ? `<button class="btn small" data-act="sellitem" data-arg="${k}" data-n="${n}" ${near ? '' : 'disabled'}>Все (${n * Items.ITEMS[k].sell} 🪙)</button>` : ''}</div>`).join('') + '</div>';
       return { title: '💰 Повозка «Продажа лошадей»', html };
     });
+  }
+
+
+  /* ---------- рынок ---------- */
+  let marketTab = 'horses', swapPick = null, trainPick = null;
+  function horseCard(h, extra) {
+    const ph = Horses.pheno(h), B = Genetics.BREEDS[h.breed];
+    const sk = Object.keys(Horses.SKILLS).map(k => `${Horses.SKILLS[k].slice(0, 4)}. ${Horses.skill(h, k)}`).join(' · ');
+    return `<div class="stall"><canvas width="150" height="78" data-hid="${h.id}"></canvas>
+      <div class="nm">${sexIcon(h)} ${esc(h.name)}</div>
+      <div class="sub">${esc(ph.name)}</div><div class="sub">${esc(B.name)}, ${Horses.ageText(h)}</div>
+      ${h.magic ? `<div class="sub"><b>${Horses.magicText(h)}</b></div>` : ''}
+      <div class="sub small">${sk}</div>${extra}</div>`;
+  }
+  function marketTabs(cur) {
+    return `<div class="row tabs">${World.MARKET_STALLS.map(st => `<button class="btn small ${st.id === cur ? 'active' : 'ghost'}" data-act="mk-tab" data-arg="${st.id}">${st.name}</button>`).join('')}</div>`;
+  }
+  function openMarket(tab) {
+    if (tab) marketTab = tab;
+    swapPick = null; trainPick = null;
+    open(marketView);
+  }
+  function marketView() {
+    const S = G.S, m = Market.M();
+    let html = marketTabs(marketTab) + `<p>У тебя: <b>${S.money} 🪙</b></p>`;
+    if (marketTab === 'horses') {
+      const t = Math.ceil(m.refreshT / 60);
+      html += `<p>Конский торговец Ахмед: «Лучшие лошади со всего света! Не нравится цена — торгуйся!» <span class="small">Новые лошади ≈ через ${t} мин.</span></p>`;
+      if (m.say) html += `<p class="note">💬 ${esc(m.say)}</p>`;
+      html += '<div class="stalls">';
+      for (const h of m.stock) {
+        const btns = `<div class="sub">Цена: <b>${h.ask} 🪙</b></div>
+          <button class="btn small green" data-act="mk-buy" data-arg="${h.id}" ${S.money >= h.ask ? '' : 'disabled'}>Купить</button>
+          ${h.haggles > 0 ? `<div class="row"><span class="small">Торг (${h.haggles}):</span>
+            <button class="btn small" data-act="mk-haggle" data-arg="${h.id}" data-f="0.9">−10%</button>
+            <button class="btn small" data-act="mk-haggle" data-arg="${h.id}" data-f="0.8">−20%</button>
+            <button class="btn small" data-act="mk-haggle" data-arg="${h.id}" data-f="0.7">−30%</button></div>` : '<div class="small">торг окончен</div>'}`;
+        html += horseCard(h, btns);
+      }
+      html += '</div><p class="small">Чем больше скидку просишь, тем реже торговец соглашается. Три отказа — и он поднимет цену!</p>';
+    } else if (marketTab === 'trainer') {
+      html += '<p>Тренер Олег: «За монетки подтяну любой навык твоей лошади. Чем навык выше — тем дороже занятие».</p>';
+      const list = S.horses.filter(h => Horses.isAdult(h));
+      if (!list.length) html += '<p>Взрослых лошадей пока нет — тренировать некого.</p>';
+      if (trainPick && !G.byId(trainPick)) trainPick = null;
+      if (!trainPick) {
+        html += '<div class="stalls">' + list.map(h => horseCard(h, `<button class="btn small green" data-act="mk-trainpick" data-arg="${h.id}">💪 Тренировать</button>`)).join('') + '</div>';
+      } else {
+        const h = G.byId(trainPick);
+        html += `<button class="btn ghost small" data-act="mk-trainpick" data-arg="">← Другая лошадь</button><div class="stalls">${horseCard(h, '')}</div><div class="cols"><div>`;
+        for (const k of Object.keys(Horses.SKILLS)) {
+          const max = Horses.skill(h, k) >= 100 || h.base[k] + h.train[k] >= 100, pr = Market.trainPrice(h, k);
+          html += `${skillBar(h, k)}<button class="btn small ${max ? '' : 'green'}" data-act="mk-train" data-id="${h.id}" data-arg="${k}" ${max || S.money < pr ? 'disabled' : ''}>${max ? 'максимум' : `+3 за ${pr} 🪙`}</button>`;
+        }
+        html += `</div><div><h4>Отдых и уход</h4>${bar('Энергия', h.energy, careColor(h.energy))}${bar('Настроение', h.mood, careColor(h.mood))}
+          <button class="btn" data-act="mk-spa" data-id="${h.id}" ${S.money >= 25 ? '' : 'disabled'}>🧖 Массаж и мытьё — 25 🪙</button></div></div>`;
+      }
+    } else if (marketTab === 'swap') {
+      html += '<p>Обменщица Фрося: «Меняю что угодно на что угодно! Лошадь на лошадь — с доплатой, вещи на вещи — честно».</p><h4>🔁 Лошадь на лошадь</h4>';
+      const mine = S.horses.filter(h => h.state !== 'ridden');
+      if (!mine.length) html += '<p class="small">Сначала заведи свою лошадь.</p>';
+      else if (!swapPick || !G.byId(swapPick)) {
+        html += '<p class="small">Выбери, какую свою лошадь отдаёшь:</p><div class="stalls">' + mine.map(h => horseCard(h, `<div class="sub">Оценка: ${Market.swapValue(h)} 🪙</div><button class="btn small" data-act="mk-swappick" data-arg="${h.id}">Отдать</button>`)).join('') + '</div>';
+      } else {
+        const h = G.byId(swapPick), val = Market.swapValue(h);
+        html += `<p>Отдаёшь: <b>${esc(h.name)}</b> (оценка ${val} 🪙). <button class="btn ghost small" data-act="mk-swappick" data-arg="">Выбрать другую</button></p><div class="stalls">`;
+        for (const t of m.stock) {
+          const diff = t.ask - val;
+          const txt = diff > 0 ? `доплатить ${diff} 🪙` : diff < 0 ? `тебе доплатят ${-diff} 🪙` : 'без доплаты';
+          html += horseCard(t, `<button class="btn small green" data-act="mk-swap" data-id="${h.id}" data-arg="${t.id}" ${diff > S.money ? 'disabled' : ''}>🔁 Обменять (${txt})</button>`);
+        }
+        html += '</div>';
+      }
+      html += '<h4>🔁 Вещи на вещи</h4><div class="shop">';
+      const fmt = o => Object.entries(o).map(([k, n]) => `${Items.icon(k)} ${Items.name(k)} ×${n}`).join(' + ');
+      for (const sw of Market.SWAPS) {
+        const have = Object.entries(sw.give).map(([k]) => `${Items.icon(k)}${S.inv[k] || 0}`).join(' ');
+        html += `<div class="item"><div class="ic">🔁</div><div class="t"><b>${fmt(sw.give)}</b><small>→ ${fmt(sw.get)} · у тебя: ${have}</small></div>
+          <button class="btn small ${Market.canSwap(sw) ? 'green' : ''}" data-act="mk-swapitem" data-arg="${sw.id}" ${Market.canSwap(sw) ? '' : 'disabled'}>Обменять</button></div>`;
+      }
+      html += '</div>';
+    } else {
+      html += `<p>Твоя стойка: выставь лошадей (до ${Market.MAX_LISTED_HORSES}) и вещи по своей цене. Покупатели подходят сами, даже когда тебя нет рядом. Дорого — покупают редко, а иногда торгуются.</p>`;
+      if (m.offer) {
+        const o = m.offer;
+        html += `<div class="note">🗣️ <b>${esc(o.buyer)}</b> предлагает <b>${o.price} 🪙</b> за «${esc(o.name)}» (ждёт ещё ${Math.ceil(o.t)} с)
+          <div class="row"><button class="btn small green" data-act="mk-offer" data-arg="1">🤝 Согласиться</button><button class="btn small" data-act="mk-offer" data-arg="0">Нет, дёшево</button></div></div>`;
+      }
+      const L = Market.listings();
+      html += '<h4>На прилавке</h4>';
+      if (!L.length) html += '<p class="small">Пока пусто.</p>';
+      html += '<div class="shop">';
+      for (const l of L) {
+        const ratio = l.price / Math.max(1, l.value);
+        const tag = ratio <= 1.1 ? '😀 купят быстро' : ratio <= 1.4 ? '🙂 купят' : ratio <= 1.8 ? '🤔 дороговато' : '😬 очень дорого';
+        const id = l.kind === 'horse' ? `data-id="${l.id}"` : `data-arg="${l.key}"`;
+        html += `<div class="item"><div class="ic">${l.kind === 'horse' ? '🐴' : Items.icon(l.key)}</div>
+          <div class="t"><b>${esc(l.name)}${l.n > 1 ? ' ×' + l.n : ''}</b><small>цена ${l.price} 🪙${l.kind === 'item' ? ' за штуку' : ''} · обычно ≈ ${Math.round(l.value)} 🪙 · ${tag}</small></div>
+          <button class="btn small" data-act="mk-price" data-k="${l.kind}" ${id} data-f="0.9">−10%</button>
+          <button class="btn small" data-act="mk-price" data-k="${l.kind}" ${id} data-f="1.1">+10%</button>
+          <button class="btn small ghost" data-act="mk-unlist" data-k="${l.kind}" ${id}>Снять</button></div>`;
+      }
+      html += '</div><h4>Выставить лошадь</h4>';
+      const can = S.horses.filter(h => h.state === 'stall' || h.state === 'paddock');
+      html += can.length ? '<div class="row">' + can.map(h => `<button class="btn small" data-act="mk-list" data-id="${h.id}">${sexIcon(h)} ${esc(h.name)} <small>≈${Market.horseValue(h)} 🪙</small></button>`).join('') + '</div>' : '<p class="small">Нет свободных лошадей.</p>';
+      html += '<h4>Выставить вещи</h4>';
+      const goods = Object.entries(S.inv).filter(([k, n]) => n > 0 && (Items.ITEMS[k] && Items.ITEMS[k].sell > 0));
+      html += goods.length ? '<div class="shop">' + goods.map(([k, n]) => `<div class="item"><div class="ic">${Items.icon(k)}</div><div class="t"><b>${Items.name(k)}</b><small>есть ${n} · обычно ≈ ${Math.round(Market.itemValue(k))} 🪙</small></div>
+        <button class="btn small" data-act="mk-listitem" data-arg="${k}" data-n="1">+1</button>${n > 1 ? `<button class="btn small" data-act="mk-listitem" data-arg="${k}" data-n="${n}">Все</button>` : ''}</div>`).join('') + '</div>' : '<p class="small">В рюкзаке нечего продавать.</p>';
+      if (m.log.length) html += '<h4>Последние продажи</h4><ul class="small">' + m.log.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>';
+    }
+    return { title: '🎪 Рынок', html };
   }
 
   /* ---------- рюкзак ---------- */
@@ -678,6 +792,10 @@ const UI = (() => {
           <li>🏜️ <b>Пустыня, дремучий лес и тундра</b> со снежными скалами — на юге. В пустыне живут ахалтекинцы и арабы, в тундре — мохнатые якутские лошади.</li>
           <li>💎 <b>Сёдла и уздечки:</b> классические, кристальные, цветочные и ракушечные, любого цвета.</li>
           <li>💇 <b>Грива:</b> косички, бантики, ирокез и краски — розовая, голубая, радужная…</li>
+          <li>🎪 <b>Рынок</b> в деревне: покупай лошадей и торгуйся с торговцем, прокачивай навыки у тренера, меняйся у обменщицы, а на своей стойке продавай лошадей и вещи по своей цене — покупатели тоже торгуются!</li>
+          <li>💎 <b>Стихийные лошадки:</b> ледяные (синие), кристальные (синие, красные, жёлтые, зелёные, оранжевые…), огненные, водяные, радужные и солнечные — в Грибном королевстве; песочные — в пустыне, каменные — в пещере, грибные — у грибов, лиственные и сырые с белыми узорами — в лесу у озера.</li>
+          <li>🌀 <b>Портал</b> в глубине пещеры, где бродят призраки и лошади-скелеты, ведёт на <b>небесные острова</b> с лианами. Там летают дикие крылатые лошади и облачные лошадки на облачках. Долететь можно и на крылатой лошади — за южный край земли.</li>
+          <li>🌧️ В дождь у лошадей пачкаются ноги — у всех, кроме тех, что стоят в конюшне. Почисти щёткой!</li>
           <li>🌙 <b>День и ночь</b> сменяют друг друга (сутки — 8 минут). Ночью табун спит, и подкрасться к лошадям легче.</li>
         </ul>
         <p>Игра сохраняется сама.</p>
@@ -743,6 +861,20 @@ const UI = (() => {
       case 'tackstyle': G.act.buyStyle(arg, b.dataset.s); render(); break;
       case 'tackcolor': G.act.setTackColor(arg, b.dataset.c); render(); break;
       case 'sail': G.act.sail(arg); break;
+      case 'mk-tab': marketTab = arg; swapPick = null; trainPick = null; render(); break;
+      case 'mk-buy': Market.buy(+arg); render(); break;
+      case 'mk-haggle': Market.haggle(+arg, +b.dataset.f); render(); break;
+      case 'mk-trainpick': trainPick = arg ? +arg : null; render(); break;
+      case 'mk-train': Market.train(h, arg); render(); break;
+      case 'mk-spa': Market.spa(h); render(); break;
+      case 'mk-swappick': swapPick = arg ? +arg : null; render(); break;
+      case 'mk-swap': Market.swapHorse(id, +arg); swapPick = null; render(); break;
+      case 'mk-swapitem': Market.swapItems(arg); render(); break;
+      case 'mk-offer': Market.answerOffer(arg === '1'); render(); break;
+      case 'mk-list': Market.listHorse(h); render(); break;
+      case 'mk-listitem': Market.listItem(arg, +b.dataset.n); render(); break;
+      case 'mk-price': if (b.dataset.k === 'horse') Market.setHorsePrice(h, +b.dataset.f); else Market.setItemPrice(arg, +b.dataset.f); render(); break;
+      case 'mk-unlist': if (b.dataset.k === 'horse') Market.unlistHorse(h); else Market.unlistItem(arg); render(); break;
       case 'buyitem': G.act.buyItem(arg, +b.dataset.n, +b.dataset.p); render(); break;
       case 'sellitem': G.act.sellItem(arg, +b.dataset.n); render(); break;
       case 'mane': openMane(id); break;
@@ -773,6 +905,6 @@ const UI = (() => {
   return {
     init, updateHud, toast, closeModal, isModalOpen, openStable, openShop, openSell, openInventory,
     openHelp, openTraining, openJumping, jumpResult, openRace, raceResult, result,
-    openQuests, openNpc, openBoard, openBuild, openBed, openMane, openBoat, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
+    openQuests, openNpc, openBoard, openBuild, openBed, openMane, openBoat, openMarket, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
   };
 })();

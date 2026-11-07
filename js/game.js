@@ -101,6 +101,7 @@ const Game = (() => {
       seenHelp: false,
       clock: 8 * 60,   // минуты от полуночи
       builds: [], flags: {}, quests: {}, board: null, buildId: 0, bigTreasure: null,
+      market: null,
     };
   }
 
@@ -129,7 +130,10 @@ const Game = (() => {
     s.player.detector = false;
     s.builds = data.builds || []; s.flags = data.flags || {}; s.quests = data.quests || {};
     for (const h of s.horses) if (h.state === 'ridden' || h.state === 'led') h.state = 'stall';
-    Horses.nextId = Math.max(s.nextId || 1, ...s.horses.map(h => h.id + 1), 1);
+    // старые огненные и ледяные лошадки получают новый окрас
+    for (const h of s.horses) if ((h.breed === 'firehorse' || h.breed === 'icehorse') && h.magic && !h.magic.elem) h.magic.elem = h.breed === 'firehorse' ? 'fire' : 'ice';
+    s.market = data.market || null;
+    Horses.nextId = Math.max(s.nextId || 1, ...s.horses.map(h => h.id + 1), ...((s.market && s.market.stock) || []).map(h => h.id + 1), 1);
     return s;
   }
 
@@ -139,6 +143,7 @@ const Game = (() => {
     S.seenHelp = true;
     wild = []; led = null; ex = null;
     Horses.nextId = 1;
+    Market.reset();
     spawnHerd();
     Farm.syncSolids();
     UI.closeModal();
@@ -201,16 +206,30 @@ const Game = (() => {
   // три табуна: обычные лошади в поле, волшебные в Грибном королевстве, скелеты в пещере
   const HERDS = {
     field: { area: World.FIELD, count: WILD_COUNT, sleeps: true, name: 'в поле' },
-    magic: { area: { x: World.MUSHROOM.x + 150, y: World.MUSHROOM.y + 150, w: World.MUSHROOM.w - 300, h: World.MUSHROOM.h - 300 }, count: 6, sleeps: true, name: 'в Грибном королевстве' },
+    magic: { area: { x: World.MUSHROOM.x + 150, y: World.MUSHROOM.y + 150, w: World.MUSHROOM.w - 300, h: World.MUSHROOM.h - 300 }, count: 9, sleeps: true, name: 'в Грибном королевстве' },
+    // у портала в глубине пещеры — ещё скелеты
+    portal: { area: { x: World.PORTAL.x - 450, y: World.PORTAL.y - 380, w: 800, h: 700 }, count: 3, sleeps: false, name: 'у портала' },
+    // в лесу у Лесного озера — лиственные и сырые лошадки
+    forest: { area: { x: 1900, y: 4100, w: 2300, h: 1700 }, count: 6, sleeps: true, name: 'в лесу' },
     cave: { area: { x: World.CAVE.x + 100, y: World.CAVE.y + 100, w: World.CAVE.w - 200, h: World.CAVE.h - 200 }, count: 4, sleeps: false, name: 'в пещере' },
     desert: { area: { x: World.DESERT.x + 200, y: World.DESERT.y + 200, w: World.DESERT.w - 400, h: World.DESERT.h - 400 }, count: 6, sleeps: true, name: 'в пустыне' },
     tundra: { area: { x: World.TUNDRA.x + 200, y: World.TUNDRA.y + 200, w: World.TUNDRA.w - 400, h: World.TUNDRA.h - 400 }, count: 6, sleeps: true, name: 'в тундре' },
   };
   // на каждом острове — 5 диких лошадей, раз в 5 минут они меняются
   for (const I of World.ISLANDS) HERDS[I.id] = { area: I.area, count: 5, sleeps: true, name: `на острове «${I.name}»`, island: I };
+  // небесные острова: дикие крылатые и облачные лошадки
+  for (const I of World.SKY_ISLANDS.slice(0, 3)) HERDS[I.id] = { area: I.area, count: I.id === 'sky1' ? 6 : 4, sleeps: false, name: `на острове «${I.name}»`, sky: true };
   const ISLAND_REFRESH = 300;
   let islandT = ISLAND_REFRESH;
-  const HOME_BREEDS = { desert: ['akhal', 'akhal', 'arab', 'arab', 'arab'], tundra: ['yakut', 'yakut', 'yakut', 'yakut', 'fjord', 'icehorse'] };
+  const HOME_BREEDS = {
+    desert: ['akhal', 'akhal', 'arab', 'arab', 'sandhorse', 'sandhorse'],
+    tundra: ['yakut', 'yakut', 'yakut', 'yakut', 'fjord', 'icehorse'],
+    portal: ['skeleton', 'skeleton', 'skeleton', 'stonehorse'],
+    forest: ['leafhorse', 'leafhorse', 'damphorse', 'damphorse', 'trakehner', 'orlov'],
+    sky1: ['cloudhorse', 'cloudhorse', 'pegasus', 'rainbowhorse', 'sunhorse', 'ravenhorse', 'arab'],
+    sky2: ['rainbowhorse', 'crystalhorse', 'butterflyhorse', 'cloudhorse', 'waterhorse'],
+    sky3: ['sunhorse', 'dragonhorse', 'cloudhorse', 'crystalhorse', 'firehorse'],
+  };
   for (const k in HERDS) Object.assign(HERDS[k], { id: k, x: 0, y: 0, tx: 0, ty: 0, t: 0, panic: 0, respawnT: 0 });
 
   function randomFieldPoint(margin = 150, area = World.FIELD) {
@@ -237,6 +256,8 @@ const Game = (() => {
     const h = Horses.create({ breed: pickBreed(home), age: isFoal ? rand(0.3, 1.5) : rand(3, 13), taken });
     // в Грибном королевстве иногда встречаются обычные лошади с одной волшебной чертой
     if (home === 'magic' && Math.random() < 0.15) h.magic = Object.assign({}, h.magic, Math.random() < 0.5 ? { horn: true } : { wings: true });
+    // на небесных островах почти у всех есть крылья или облачка
+    if (HERDS[home] && HERDS[home].sky && !Horses.canFly(h)) h.magic = Object.assign({}, h.magic, Math.random() < 0.7 ? { wings: Math.random() < 0.7 ? 'pegasus' : 'butterfly' } : { cloud: true });
     h.x = x; h.y = y; h.angle = rand(0, 6.28);
     h.slot = { x: rand(-150, 150), y: rand(-110, 110) };
     h.flee = 0; h.grazeT = rand(0, 5); h.home = home;
@@ -331,9 +352,19 @@ const Game = (() => {
         if (w.x > F.x + F.w - 40) tx = Math.min(tx, F.x + F.w - 120);
         if (w.y < F.y + 40) ty = Math.max(ty, F.y + 120);
         if (w.y > F.y + F.h - 40) ty = Math.min(ty, F.y + F.h - 120);
+        // пегасы взлетают, когда убегают; на небесных островах крылатые летают и просто так
+        if (herd.sky && w.magic && w.magic.wings) {
+          if (w.airT == null) { w.airT = rand(2, 12); w.airLen = rand(4, 9); }
+          w.airT -= dt;
+          if (w.airT < -w.airLen) { w.airT = rand(6, 16); w.airLen = rand(4, 9); }
+        }
+        const wantFly = w.magic && w.magic.wings && (w.flee > 0 || (herd.sky && w.airT < 0));
+        w.fly = wantFly ? Math.min(1, (w.fly || 0) + dt * 2) : Math.max(0, (w.fly || 0) - dt);
+        if (w.fly > 0 && herd.sky && w.flee <= 0 && sp < 60) {
+          // кружит над островом
+          sp = 90; tx = w.x + Math.cos(time * 0.4 + w.seed) * 120; ty = w.y + Math.sin(time * 0.3 + w.seed) * 120;
+        }
         moveToward(w, tx, ty, sp, dt, w.flee > 0 ? 4 : 2);
-        // пегасы взлетают, когда убегают
-        w.fly = w.magic && w.magic.wings && w.flee > 0 ? Math.min(1, (w.fly || 0) + dt * 2) : Math.max(0, (w.fly || 0) - dt);
         for (const o of members) {
           if (o === w) continue;
           const dx = w.x - o.x, dy = w.y - o.y, dd = Math.hypot(dx, dy);
@@ -345,7 +376,7 @@ const Game = (() => {
       }
 
       // новые лошади приходят взамен пойманных (на островах — только при смене табуна)
-      if (members.length < herd.count && !herd.island) {
+      if (members.length < herd.count && !herd.island && !herd.sky) {
         herd.respawnT -= dt;
         if (herd.respawnT <= 0) {
           herd.respawnT = rand(8, 16);
@@ -371,6 +402,10 @@ const Game = (() => {
         wild.push(makeWild(q.x, q.y, I.id));
       }
     }
+    for (const I of World.SKY_ISLANDS.slice(0, 3)) {
+      const H = HERDS[I.id], n = wild.filter(w => w.home === I.id).length;
+      for (let i = n; i < H.count; i++) { const q = randomFieldPoint(120, I.area); wild.push(makeWild(q.x, q.y, I.id)); }
+    }
     UI.toast('🏝️ На островах появились новые дикие лошади!', 'good');
   }
   const islandTimeLeft = () => islandT;
@@ -392,6 +427,52 @@ const Game = (() => {
     }
   }
 
+  /* ---------------- портал: пещера ↔ небесные острова ---------------- */
+  let portalCd = 0;
+  function updatePortal(dt) {
+    portalCd = Math.max(0, portalCd - dt);
+    const p = S.player;
+    if (p.fly || ex || Events.busy()) return;
+    const P1 = World.PORTAL, P2 = World.SKY_PORTAL;
+    const inP = q => Math.hypot(p.x - q.x, p.y - q.y) < q.r;
+    if (portalCd > 0) return;
+    let to = null;
+    if (inP(P1)) to = { x: P2.x, y: P2.y + 130, msg: '🌀 Вжух! Портал перенёс тебя на небесные острова! Обратно — через портал на Облачном острове' };
+    else if (inP(P2)) to = { x: P1.x - 150, y: P1.y + 40, msg: '🌀 Портал вернул тебя в пещеру' };
+    if (!to) return;
+    portalCd = 3;
+    p.x = to.x; p.y = to.y; p.vx = p.vy = 0; p.target = null;
+    const m = mounted();
+    if (m) { m.x = p.x; m.y = p.y; }
+    if (led) { led.x = p.x - 60; led.y = p.y + 30; led.vx = led.vy = 0; }
+    if (to.y > World.H) stat('skyVisits');
+    UI.toast(to.msg, 'good');
+    Sound.fanfare();
+  }
+
+  /* ---------------- грязь на ногах в дождь ---------------- */
+  // в дождь пачкаются все лошади, кроме тех, что стоят в конюшне; в пещере, пустыне, тундре и на небе дождя нет
+  const DRY = { cave: 1, desert: 1, tundra: 1, sky: 1 };
+  const dryRegion = (x, y) => DRY[World.regionAt(x, y)] || y > World.H;
+  function updateMud(dt) {
+    const raining = Events.raining();
+    const p = S.player, m = mounted();
+    const soil = (h, k = 1) => {
+      if (raining && !dryRegion(h.x, h.y) && !World.inRect(h.x, h.y, World.STABLE)) h.mud = Math.min(100, (h.mud || 0) + dt * 2.2 * k);
+    };
+    for (const h of S.horses) {
+      if (h.state === 'stall') { h.mud = Math.max(0, (h.mud || 0) - dt * 0.05); continue; }
+      soil(h, h.state === 'ridden' ? 1 + p.gait * 0.5 : 1);
+      if (h.mud > 30) h.clean = Math.max(0, h.clean - dt * 0.05);
+    }
+    if (led) soil(led);
+    if (m && p.fly) m.mud = Math.max(0, (m.mud || 0) - dt * 0.5);
+    for (const w of wild) {
+      if (raining) soil(w);
+      else w.mud = Math.max(0, (w.mud || 0) - dt * 0.4);
+    }
+  }
+
   /* ---------------- свои лошади ---------------- */
   function updateOwned(dt) {
     for (const h of S.horses) {
@@ -406,7 +487,11 @@ const Game = (() => {
       if (h.clean < 25) moodD -= 0.05;
       h.mood = clamp(h.mood + dt * moodD, 0, 100);
 
-      if (h.state === 'stall') {
+      if (h.state === 'market') {
+        const sp = Market.spotOf(h);
+        h.x = sp.x; h.y = sp.y; h.angle = sp.angle; h.spd = 0;
+        h.headTurn = Math.sin(time * 0.6 + h.seed) * 0.4;
+      } else if (h.state === 'stall') {
         const sp = stallSpot(h.stall);
         h.x = sp.x; h.y = sp.y; h.angle = sp.angle; h.spd = 0;
         h.headTurn = Math.sin(time * 0.5 + h.seed) * 0.35;
@@ -465,7 +550,7 @@ const Game = (() => {
       p.gait = 0;
       UI.toast(`😮‍💨 ${m.name} ${Horses.v(m, 'устала', 'устал')} — только шагом. Отдохните в конюшне.`, 'warn');
     }
-    if (p.fly && !(m && m.magic && m.magic.wings)) p.fly = false;
+    if (p.fly && !Horses.canFly(m)) p.fly = false;
     const max = m ? gaitSpeed(m, p.gait) * (p.fly ? 1.3 : 1) : 140;
     const k = Math.min(1, dt * (m ? 3.5 : 12));
     p.vx = (p.vx || 0) + (dx * max - (p.vx || 0)) * k;
@@ -474,7 +559,7 @@ const Game = (() => {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     if (p.fly) {
-      p.x = clamp(p.x, 20, World.W - 20); p.y = clamp(p.y, 20, World.H - 20);
+      p.x = clamp(p.x, 20, World.W - 20); p.y = clamp(p.y, 20, World.TOTAL_H - 20);
       stat('flyTime', dt);
     } else World.collide(p, m ? 20 : 10);
     p.spd = dt > 0 ? Math.hypot(p.x - ox, p.y - oy) / dt : 0;
@@ -852,6 +937,7 @@ const Game = (() => {
       if (!S.tack.saddle || !S.tack.bridle) return UI.toast('Нужны седло и уздечка — купи их в повозке «Корм и амуниция»', 'warn');
       if (!Horses.isAdult(h)) return UI.toast('Жеребёнок ещё маленький — подожди, пока вырастет (3 года)', 'warn');
       if (h.energy < 5) return UI.toast(`${h.name} ${Horses.v(h, 'устала', 'устал')}. Пусть отдохнёт.`, 'warn');
+      if (h.state === 'market') return UI.toast(`${h.name} стоит на рынке. Сначала сними с продажи у своей стойки`, 'warn');
       const cur = mounted();
       if (cur) cur.state = 'stall';
       h.state = 'ridden';
@@ -873,6 +959,7 @@ const Game = (() => {
     },
     paddock(h) {
       if (!atFarm()) return UI.toast('Подойди к конюшне или леваде');
+      if (h.state === 'market') return UI.toast(`${h.name} стоит на рынке`);
       if (h.state === 'paddock') { h.state = 'stall'; UI.toast(`${h.name} ${Horses.v(h, 'вернулась', 'вернулся')} в денник`); }
       else if (h.state === 'stall') {
         const P = paddockFor(h);
@@ -895,7 +982,8 @@ const Game = (() => {
     brush(h) {
       if (!atFarm()) return UI.toast('Подойди к конюшне или леваде');
       if (!S.tack.brush) return UI.toast('Нужна щётка — купи в повозке', 'warn');
-      h.clean = 100;
+      if ((h.mud || 0) > 20) UI.toast(`🪮 Ноги у лошади по кличке ${h.name} снова чистые!`);
+      h.clean = 100; h.mud = 0;
       h.mood = clamp(h.mood + 8, 0, 100);
       Sound.tick();
     },
@@ -911,7 +999,7 @@ const Game = (() => {
       S.money -= 30;
       mare.preg = {
         t: 150,
-        father: { name: stallion.name, g: JSON.parse(JSON.stringify(stallion.g)), base: Object.assign({}, stallion.base), breed: stallion.breed, size: stallion.size, temper: stallion.temper, marks: JSON.parse(JSON.stringify(stallion.marks)) },
+        father: { name: stallion.name, g: JSON.parse(JSON.stringify(stallion.g)), base: Object.assign({}, stallion.base), breed: stallion.breed, size: stallion.size, temper: stallion.temper, marks: JSON.parse(JSON.stringify(stallion.marks)), magic: stallion.magic ? JSON.parse(JSON.stringify(stallion.magic)) : null },
       };
       UI.toast(`💕 ${mare.name} и ${stallion.name} ждут жеребёнка! Он родится через 2,5 минуты.`, 'good');
       Sound.fanfare();
@@ -998,7 +1086,7 @@ const Game = (() => {
     lasso() { startLasso(nearestCatchable()); },
     toggleFly() {
       const p = S.player, m = mounted();
-      if (!m || !(m.magic && m.magic.wings)) return UI.toast('Летать умеют только лошади с крыльями: пегасы, бабочки, драконы, вороны, стрекозы и пчёлки');
+      if (!Horses.canFly(m)) return UI.toast('Летать умеют лошади с крыльями (пегасы, бабочки, драконы, вороны, стрекозы, пчёлки) и облачные лошадки');
       if (p.fly) {
         if (World.blocked(p.x, p.y, 20)) return UI.toast('Здесь не приземлиться — найди ровное место', 'warn');
         p.fly = false;
@@ -1008,7 +1096,7 @@ const Game = (() => {
         if (ex || Events.busy()) return UI.toast('Во время упражнений и скачек летать нельзя');
         p.fly = true;
         p.gait = 2;
-        UI.toast('🪽 Взлетаем! Над водой и деревьями можно летать. V — приземлиться');
+        UI.toast(m.magic.wings ? '🪽 Взлетаем! Над водой и деревьями можно летать. Небесные острова — за южным краем земли. V — приземлиться' : '☁️ Облачка под копытами подняли вас в небо! Небесные острова — за южным краем земли. V — приземлиться');
         Sound.fanfare();
       }
     },
@@ -1068,6 +1156,8 @@ const Game = (() => {
     if (fp) return fp;
     const qp = Quests.prompt();
     if (qp) return qp;
+    const mp = Market.prompt();
+    if (mp) return mp;
     const piers = [World.PIER].concat(World.ISLANDS.map(I => I.pier));
     if (piers.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 130)) return { label: '⛵ Лодка', fn: () => UI.openBoat() };
     if (islandStableHere(p)) return { label: '🐴 Мои лошади', fn: () => UI.openStable(true) };
@@ -1101,7 +1191,11 @@ const Game = (() => {
     if (inJumpField()) return 'Нажми «Конкур» и выбери высоту препятствий';
     if (S.player.fly) return 'Ты летишь! V — приземлиться. Сверху видно весь мир';
     const reg = World.regionAt(S.player.x, S.player.y);
-    if (reg === 'cave') return 'В пещере темно. Здесь бродят лошади-скелеты и привидения, а где-то спрятан сундук графа';
+    if (reg === 'cave') return Math.hypot(S.player.x - World.PORTAL.x, S.player.y - World.PORTAL.y) < 700
+      ? '🌀 Впереди светится портал на небесные острова — войди в него!'
+      : 'В пещере темно. Здесь бродят лошади-скелеты и привидения, где-то спрятан сундук графа, а в глубине светится портал';
+    if (reg === 'market') return 'Рынок: покупай и продавай лошадей, торгуйся, прокачивай навыки и меняйся вещами';
+    if (S.player.y > World.H) return 'Небесные острова! Здесь живут крылатые и облачные лошадки. Портал домой — в центре Облачного острова';
     if (reg === 'mushroom') return 'Грибное королевство: здесь живут пегасы, единороги, огненные и ледяные лошадки';
     if (isNight()) return 'Ночь: табуны спят — подкрасться к лошадям легче. Фонари освещают ферму';
     if (!Quests.journal().length) return 'Поговори с жителями (💬) — у них есть задания. Список заданий — кнопка 📜';
@@ -1217,6 +1311,11 @@ const Game = (() => {
     lbl(World.SHOP.name, World.SHOP.x + World.SHOP.w / 2, World.SHOP.y - 10, 120);
     for (const hh of World.HOUSES) if (hh.name) lbl(hh.name, hh.x + hh.w / 2, hh.y - 10, 260, 14);
     lbl('📋 Доска заданий', World.BOARD.x, World.BOARD.y, 140, 14);
+    lbl('🎪 РЫНОК', World.MARKET.x + World.MARKET.w / 2, World.MARKET.y - 10, 120, 18, '#b35c00');
+    for (const st of World.MARKET_STALLS) lbl(st.name, st.x + st.w / 2, st.y, 90, 13);
+    lbl('🌀 Портал', World.PORTAL.x, World.PORTAL.y, 130, 16, '#7048e8');
+    lbl('🌀 Портал в пещеру', World.SKY_PORTAL.x, World.SKY_PORTAL.y, 130, 16, '#7048e8');
+    for (const I of World.SKY_ISLANDS) lbl('☁️ ' + I.name, I.x, I.y - I.ry + 80, 60, 15, '#1c4f8a');
     lbl('🦇 Пещера', World.CAVE.x - 120, (World.CAVE_GATE.y1 + World.CAVE_GATE.y2) / 2, 300, 18, '#343a40');
     if (!S.flags.chest_opened) lbl('🧰', World.CHEST.x, World.CHEST.y, 80, 22);
     // жители и значки заданий
@@ -1265,7 +1364,7 @@ const Game = (() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     Events.drawScreen(ctx, canvas.width, canvas.height, dpr, time);
     Draw.minimap(mmctx, S, api);
-    Events.drawMinimap(mmctx, mmctx.canvas.width / World.W);
+    if (p.y <= World.H) Events.drawMinimap(mmctx, mmctx.canvas.width / World.W);
   }
 
   function render() {
@@ -1303,6 +1402,9 @@ const Game = (() => {
       Farm.update(dt);
       refreshIslands(dt);
       updatePen(dt);
+      updatePortal(dt);
+      updateMud(dt);
+      Market.update(dt);
       Creatures.update(dt);
       visitT -= dt;
       if (visitT <= 0) { visitT = 0.5; Quests.updateVisits(); }
@@ -1326,7 +1428,7 @@ const Game = (() => {
       UI.updateHud({
         money: S.money, count: S.horses.length, max: totalStalls(), stats: S.stats, hint: hint(),
         prompt: computePrompt(), canLasso: !!nearestCatchable() && !lasso,
-        mounted: m ? { name: m.name, gait: S.player.gait, energy: m.energy, wings: !!(m.magic && m.magic.wings), fly: !!S.player.fly } : null,
+        mounted: m ? { name: m.name, gait: S.player.gait, energy: m.energy, wings: Horses.canFly(m), fly: !!S.player.fly } : null,
         led: led ? led.name : null, exercise: Farm.hud() || exerciseHud(), clock: clockText(),
         detector: S.tack.detector ? { on: !!S.player.detector, signal: Farm.signal() } : null,
         quests: Quests.journal().length, region: World.REGION_NAMES[World.regionAt(S.player.x, S.player.y)],
@@ -1343,9 +1445,9 @@ const Game = (() => {
     comfortHeight, JUMP_HEIGHTS, JUMP_NORM,
     nearSell: () => dist(S.player, { x: World.SELL.x + World.SELL.w / 2, y: World.SELL.y + World.SELL.h / 2 }) < 170,
     resolveLasso, save, sellPrice, float, makeWild,
-    findHorse: id => S.horses.find(x => x.id === id) || (led && led.id === id ? led : null) || Events.findHorse(id),
+    findHorse: id => S.horses.find(x => x.id === id) || (led && led.id === id ? led : null) || Events.findHorse(id) || Market.findHorse(id),
     rivals: () => Events.rivals(), gates: () => Events.gates(), bunnies: () => Events.bunnies(), weather: () => Events.weather(),
-    herds: () => HERDS,
+    herds: () => HERDS, mud: h => h.mud || 0,
   };
 
   function start() {
@@ -1370,6 +1472,7 @@ const Game = (() => {
     Farm.init(api);
     Quests.init(api);
     Creatures.init(api);
+    Market.init(api);
     canvas.addEventListener('wheel', e => { Voxel.zoom(e.deltaY); e.preventDefault(); }, { passive: false });
     requestAnimationFrame(ts => { last = ts; requestAnimationFrame(frame); });
     Voxel.load().then(ok => {

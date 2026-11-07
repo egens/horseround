@@ -10,6 +10,40 @@ const Horses = (() => {
   const SKILLS = { speed: 'Скорость', jump: 'Прыжки', dressage: 'Выездка', stamina: 'Выносливость' };
   const FACE = ['', 'звёздочка', 'проточина', 'лысина'];
 
+  /*
+   * Стихийные лошадки: свой окрас и узор вместо генетического.
+   * body/mane/legs — основные цвета (для меню, миникарты и 3D), maneGlow — грива светится.
+   */
+  const CRYSTAL_TINTS = [
+    ['#4dabf7', 'синяя'], ['#ff6b6b', 'красная'], ['#ffd43b', 'жёлтая'], ['#51cf66', 'зелёная'],
+    ['#ff922b', 'оранжевая'], ['#cc5de8', 'фиолетовая'], ['#f783ac', 'розовая'], ['#3bc9db', 'бирюзовая'],
+  ];
+  const ELEMS = {
+    ice: { word: 'ледяная', icon: '🧊', body: '#74c0fc', mane: '#e7f5ff', legs: '#4dabf7', maneCols: ['#a5f3fc', '#cffafe', '#67e8f9', '#e0f2fe', '#bae6fd'], maneGlow: true },
+    crystal: { word: 'кристальная', icon: '💎', body: '#4dabf7', mane: '#d0ebff', legs: '#339af0', maneGlow: true },
+    fire: { word: 'огненная', icon: '🔥', body: '#f76707', mane: '#ffd43b', legs: '#c92a2a', maneCols: ['#ff3d00', '#ff6d00', '#ff9100', '#ffc400', '#ffea00'], maneGlow: true },
+    water: { word: 'водяная', icon: '💧', body: '#339af0', mane: '#e7f5ff', legs: '#1c7ed6', maneCols: ['#ffffff', '#d0ebff', '#a5d8ff', '#74c0fc', '#e7f5ff'], maneGlow: true },
+    rainbow: { word: 'радужная', icon: '🌈', body: '#ffd43b', mane: '#cc5de8', legs: '#4dabf7', maneCols: ['#ff6b6b', '#ff922b', '#ffd43b', '#51cf66', '#4dabf7', '#5c7cfa', '#cc5de8'], maneGlow: true },
+    sun: { word: 'солнечная', icon: '☀️', body: '#fcc419', mane: '#fff3bf', legs: '#f08c00', maneCols: ['#fff3bf', '#ffe066', '#ffc078', '#ffa94d', '#ffd43b'], maneGlow: true },
+    sand: { word: 'песочная', icon: '🏜️', body: '#e9d3a1', mane: '#c9a66b', legs: '#d4b67a', maneCols: ['#c9a66b', '#b08d57', '#dcc394'] },
+    stone: { word: 'каменная', icon: '🪨', body: '#868e96', mane: '#495057', legs: '#6c757d', maneCols: ['#495057', '#343a40', '#5c940d'] },
+    mushroom: { word: 'грибная', icon: '🍄', body: '#f1e3c6', mane: '#e03131', legs: '#e8d9b5', maneCols: ['#e03131', '#c92a2a', '#ffffff', '#e03131'] },
+    leaf: { word: 'лиственная', icon: '🍃', body: '#40c057', mane: '#2b8a3e', legs: '#5c3d1e', maneCols: ['#2b8a3e', '#37b24d', '#69db7c', '#fab005', '#2f9e44'] },
+    damp: { word: 'сырая', icon: '💦', body: '#4a5a6a', mane: '#e9ecef', legs: '#3b4754', maneCols: ['#f1f3f5', '#dee2e6', '#ced4da'] },
+  };
+  function crystalTint() { return CRYSTAL_TINTS[Math.floor(Math.random() * CRYSTAL_TINTS.length)][0]; }
+  const tintName = c => (CRYSTAL_TINTS.find(t => t[0] === c) || [c, 'переливчатая'])[1];
+  // «окрас» стихийной лошадки поверх генетического
+  function elemLook(h) {
+    const k = h.magic && h.magic.elem, E = k && ELEMS[k];
+    if (!E) return null;
+    if (k === 'crystal') {
+      const t = h.magic.tint || '#4dabf7';
+      return { elem: k, tint: t, name: `кристальная (${tintName(t)})`, body: t, mane: Genetics.mix(t, '#ffffff', 0.6), legs: Genetics.mix(t, '#000000', 0.15) };
+    }
+    return { elem: k, name: k === 'damp' ? 'сырая с белыми узорами' : E.word, body: E.body, mane: E.mane, legs: E.legs };
+  }
+
   let nextId = 1;
   const rand = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -59,7 +93,8 @@ const Horses = (() => {
       marks: o.marks || randomMarks(),
       hunger: 80, energy: 100, mood: 70, clean: 80,
       preg: null,
-      magic: o.magic !== undefined ? o.magic : (B.magic ? Object.assign({}, B.magic) : null),
+      magic: o.magic !== undefined ? o.magic : (B.magic ? Object.assign({}, B.magic, B.magic.elem === 'crystal' ? { tint: crystalTint() } : {}) : null),
+      mud: 0,
       maneStyle: o.maneStyle || 'normal', maneDye: o.maneDye || null,
       state: 'wild', stall: -1,
       x: 0, y: 0, angle: 0, vx: 0, vy: 0, spd: 0, phase: Math.random() * 6, headTurn: 0,
@@ -96,6 +131,15 @@ const Horses = (() => {
     if (wings.length && Math.random() < (wings.length === 2 ? 0.75 : 0.5)) m.wings = pick(wings);
     const manes = [a.mane, b.mane].filter(Boolean);
     if (manes.length && Math.random() < (manes.length === 2 ? 0.75 : 0.5)) m.mane = pick(manes);
+    // стихия (вместе с цветом кристалла) — от одного из родителей
+    const elems = [a, b].filter(x => x.elem);
+    if (elems.length && Math.random() < (elems.length === 2 ? 0.75 : 0.5)) {
+      const src = pick(elems);
+      m.elem = src.elem;
+      if (src.elem === 'crystal') m.tint = src.tint || crystalTint();
+    }
+    const clouds = (a.cloud ? 1 : 0) + (b.cloud ? 1 : 0);
+    if (clouds && Math.random() < (clouds === 2 ? 0.75 : 0.5)) m.cloud = true;
     return Object.keys(m).length ? m : null;
   }
   // старые сохранения: wings: true — это пегас
@@ -113,14 +157,20 @@ const Horses = (() => {
     if (m.mane === 'fire') p.push('огненная грива 🔥');
     if (m.mane === 'ice') p.push('ледяная грива ❄️');
     if (m.skeleton) p.push('скелет 💀');
+    if (m.elem && ELEMS[m.elem]) p.push(`${m.elem === 'crystal' ? 'кристальная, ' + tintName(m.tint) : ELEMS[m.elem].word} ${ELEMS[m.elem].icon}`);
+    if (m.cloud) p.push('летает на облачках ☁️');
     return p.join(', ');
   }
-  const isMagic = h => !!(h.magic && (h.magic.wings || h.magic.horn || h.magic.mane));
+  const isMagic = h => !!(h.magic && (h.magic.wings || h.magic.horn || h.magic.mane || h.magic.elem || h.magic.cloud));
+  // летать умеют лошади с крыльями и облачные лошадки
+  const canFly = h => !!(h && h.magic && (h.magic.wings || h.magic.cloud));
 
   function pheno(h) {
     const key = Math.floor(h.age * 8);
     if (!h._ph || h._phKey !== key) {
       h._ph = Genetics.phenotype(h.g, h.age);
+      const el = elemLook(h);
+      if (el) h._ph = Object.assign({}, h._ph, el, { stripe: null, roan: false, tob: false, leo: false, dapple: false, greyLevel: 0, pinkSkin: false });
       h._phKey = key;
     }
     return h._ph;
@@ -172,7 +222,8 @@ const Horses = (() => {
     p *= 0.85 + h.mood / 600 + h.clean / 1200;
     if (h.preg) p *= 1.3;
     const m = h.magic;
-    if (m) p *= (m.wings ? 2 : 1) * (m.horn ? 2 : 1) * (m.mane ? 1.6 : 1) * (m.skeleton ? 1.8 : 1);
+    if (m) p *= (m.wings ? 2 : 1) * (m.horn ? 2 : 1) * (m.mane ? 1.6 : 1) * (m.skeleton ? 1.8 : 1) * (m.elem ? 1.7 : 1) * (m.cloud ? 2 : 1);
+    if ((h.mud || 0) > 40) p *= 0.95;
     return Math.max(20, Math.round(p / 5) * 5);
   }
 
@@ -181,7 +232,7 @@ const Horses = (() => {
 
   return {
     SKILLS, v, create, foal, pheno, isAdult, sizeOf, skill, addTrain, ageText, sexText, marksText, price,
-    randomName, magicText, isMagic, wingType, WING_NAMES,
+    randomName, magicText, isMagic, canFly, wingType, WING_NAMES, ELEMS, crystalTint,
     get nextId() { return nextId; },
     set nextId(v) { nextId = v; },
   };
