@@ -79,7 +79,16 @@ const Items = (() => {
   };
   const RAINBOW = ['#ff6b6b', '#ffa94d', '#ffe066', '#69db7c', '#4dabf7', '#9775fa'];
 
+  // сёдла и уздечки: стиль (украшения) и цвет кожи
+  const TACK_STYLES = {
+    classic: { name: 'Классическое', icon: '🐴', saddle: 0, bridle: 0, desc: 'Простая кожа' },
+    crystal: { name: 'Кристальное', icon: '💎', saddle: 180, bridle: 110, desc: 'Сверкающие кристаллики' },
+    plant: { name: 'Цветочное', icon: '🌿', saddle: 150, bridle: 90, desc: 'Листья, лианы и цветы' },
+    shell: { name: 'Ракушечное', icon: '🐚', saddle: 160, bridle: 100, desc: 'Оболочка из ракушек и жемчуга' },
+  };
+  const LEATHER = ['#5b3a1e', '#2b2b2b', '#8a5a32', '#f1e3c6', '#c92a2a', '#1c7ed6', '#e64980', '#7048e8', '#2b8a3e', '#f59f00'];
+
   const name = k => (ITEMS[k] ? ITEMS[k].name : k);
   const icon = k => (ITEMS[k] ? ITEMS[k].icon : '•');
-  return { ITEMS, CROPS, BUILDS, MANE_STYLES, DYES, RAINBOW, name, icon };
+  return { ITEMS, CROPS, BUILDS, MANE_STYLES, DYES, RAINBOW, TACK_STYLES, LEATHER, name, icon };
 })();

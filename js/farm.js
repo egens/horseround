@@ -47,7 +47,9 @@ const Farm = (() => {
     }
   }
 
-  const NO_BUILD = () => [World.STABLE, World.ARENA, World.JUMPF, World.PADDOCK, World.MOUNTAIN, World.SELL, World.SHOP];
+  const NO_BUILD = () => [World.STABLE, World.ARENA, World.JUMPF, World.PADDOCK, World.MOUNTAIN, World.SELL, World.SHOP]
+    .concat(World.ISLANDS.flatMap(I => [I.stable, I.pasture, { x: I.pen.x - I.pen.r, y: I.pen.y - I.pen.r, w: I.pen.r * 2, h: I.pen.r * 2 }, { x: I.pier.x - 240, y: I.pier.y - 80, w: 360, h: 160 }]))
+    .concat([{ x: World.PIER.x - 80, y: World.PIER.y - 80, w: 360, h: 160 }]);
   function canPlace(type, x, y, rot) {
     const d = dims(type, rot);
     const r = { x: x - d.w / 2, y: y - d.h / 2, w: d.w, h: d.h };
@@ -198,7 +200,8 @@ const Farm = (() => {
   function newSpot() {
     const areas = [
       [World.FIELD, 3], [World.LAKELAND, 3], [World.FOREST[0], 4], [World.FARMLAND, 1], [World.VILLAGE, 1],
-      [World.MUSHROOM, 3], [World.CAVE, 2],
+      [World.MUSHROOM, 3], [World.CAVE, 2], [World.DESERT, 3], [World.TUNDRA, 3], [World.DEEPFOREST, 1],
+      ...World.ISLANDS.map(I => [I.area, 1]),
     ];
     const total = areas.reduce((s, a) => s + a[1], 0);
     for (let tries = 0; tries < 80; tries++) {

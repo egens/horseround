@@ -48,6 +48,29 @@ const Draw = (() => {
     // горы и пещера
     area(World.MOUNTAIN, '#7d7a80', ['#6c6970', '#8e8b92', '#5e5b62'], 9000);
     area(World.CAVE, '#4a4652', ['#3d3945', '#57525f', '#2f2c36'], 12000);
+    // юг: пустыня с барханами, дремучий лес, заснеженная тундра
+    area(World.DESERT, '#e8cf8f', ['#d9bd78', '#f2dca4', '#cfae66'], 30000);
+    g.strokeStyle = 'rgba(190,150,80,0.35)'; g.lineWidth = 18;
+    for (let i = 0; i < 40; i++) {
+      const x0 = World.DESERT.x + rnd() * World.DESERT.w, y0 = World.DESERT.y + rnd() * World.DESERT.h;
+      g.beginPath(); g.moveTo(x0 - 220, y0); g.quadraticCurveTo(x0, y0 - 90, x0 + 220, y0); g.stroke();
+    }
+    area(World.DEEPFOREST, '#3f6b2e', ['#34592a', '#4a7a36', '#5c4a2a', '#2d4d24'], 20000);
+    area(World.TUNDRA, '#eef3f7', ['#dde7ee', '#ffffff', '#c9d6e0', '#b7c9b0'], 30000);
+    // море и острова
+    area(World.SEA, '#2f7fb8', ['#3a8fc8', '#2a6fa4', '#5aaee0', '#ffffff'], 40000);
+    g.fillStyle = '#e8d8a8'; g.fillRect(World.SEA.x - 120, 0, 140, World.H);
+    for (const I of World.ISLANDS) {
+      g.fillStyle = '#4a9fd0'; g.beginPath(); ell(g, I.x, I.y, I.rx + 120, I.ry + 110); g.fill();
+      g.fillStyle = '#ead9a6'; g.beginPath(); ell(g, I.x, I.y, I.rx, I.ry); g.fill();
+      g.fillStyle = '#8cc063'; g.beginPath(); ell(g, I.x, I.y, I.rx - 70, I.ry - 60); g.fill();
+      if (detail) speckle(g, { x: I.x - I.rx, y: I.y - I.ry, w: I.rx * 2, h: I.ry * 2 }, 2500, ['#7cb253', '#a6d37a', '#ffb3d9', '#fff3bf'], rnd, px * 1.6);
+      g.fillStyle = '#d9b862'; g.fillRect(I.stable.x, I.stable.y, I.stable.w, I.stable.h);
+      g.fillStyle = 'rgba(70,120,40,0.25)'; g.fillRect(I.pasture.x, I.pasture.y, I.pasture.w, I.pasture.h);
+      g.fillStyle = '#dcc394'; g.beginPath(); ell(g, I.pen.x, I.pen.y, I.pen.r, I.pen.r); g.fill();
+      g.fillStyle = '#8a5a32'; g.fillRect(I.pier.x - 220, I.pier.y - 30, 240, 60);
+    }
+    g.fillStyle = '#8a5a32'; g.fillRect(World.PIER.x - 20, World.PIER.y - 30, 260, 60);
     // поля: полосы пшеницы и вспаханной земли
     const FL = World.FARMLAND;
     g.fillStyle = '#9cc46a'; g.fillRect(FL.x, FL.y, FL.w, FL.h);
@@ -72,11 +95,11 @@ const Draw = (() => {
     }
     // озёра: песчаный берег, вода, блики
     for (const L of World.LAKES) {
-      g.fillStyle = L.magic ? '#c9a7e8' : '#d8c590';
+      g.fillStyle = L.magic ? '#c9a7e8' : L.ice ? '#ffffff' : '#d8c590';
       g.beginPath(); ell(g, L.x, L.y, L.rx + 28, L.ry + 22); g.fill();
       const gr = g.createRadialGradient(L.x - L.rx * 0.2, L.y - L.ry * 0.2, 10, L.x, L.y, L.rx);
-      gr.addColorStop(0, L.magic ? '#f0b8ff' : '#8fd0f0');
-      gr.addColorStop(1, L.magic ? '#8a4fd8' : '#3f8fc0');
+      gr.addColorStop(0, L.magic ? '#f0b8ff' : L.ice ? '#f4fbff' : '#8fd0f0');
+      gr.addColorStop(1, L.magic ? '#8a4fd8' : L.ice ? '#a5d8ff' : '#3f8fc0');
       g.fillStyle = gr;
       g.beginPath(); ell(g, L.x, L.y, L.rx, L.ry); g.fill();
     }
@@ -107,7 +130,11 @@ const Draw = (() => {
       worldGround(g, k, false);
       g.fillStyle = '#8a5a32'; g.fillRect(World.STABLE.x, World.STABLE.y, World.STABLE.w, World.STABLE.h);
       g.fillStyle = '#3d6b2a';
-      for (const t of World.TREES) if (t.kind !== 'rock') g.fillRect(t.x - 25, t.y - 25, 50, 50);
+      for (const t of World.TREES) {
+        if (t.kind === 'rock' || t.kind === 'cactus' || t.kind === 'drybush') continue;
+        g.fillStyle = t.kind === 'mesa' ? '#c0603a' : t.kind === 'snowrock' ? '#9aa5b1' : t.kind === 'snowspruce' ? '#5f8a75' : '#3d6b2a';
+        g.fillRect(t.x - 25, t.y - 25, 50, 50);
+      }
       g.fillStyle = '#6b4a2b';
       for (const hh of World.HOUSES) g.fillRect(hh.x, hh.y, hh.w, hh.h);
     }

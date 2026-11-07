@@ -89,7 +89,11 @@ const Game = (() => {
     return {
       money: 300,
       inv: Object.assign(Object.fromEntries(Object.keys(Items.ITEMS).map(k => [k, 0])), { hay: 6, carrot: 3, apple: 2, seed_carrot: 2 }),
-      tack: { saddle: false, bridle: false, brush: false, goodLasso: false, detector: false, pad: null, helmet: null, boots: null },
+      tack: {
+        saddle: false, bridle: false, brush: false, goodLasso: false, detector: false, pad: null, helmet: null, boots: null,
+        saddleStyles: { classic: true }, saddleStyle: 'classic', saddleColor: '#5b3a1e',
+        bridleStyles: { classic: true }, bridleStyle: 'classic', bridleColor: '#2b1a10',
+      },
       horses: [],
       player: { x: 960, y: 470, angle: 0, gait: 0, mountId: null, shirt: '#e05a8a' },
       stats: { caught: 0, foals: 0, sold: 0, gold: 0, silver: 0, bronze: 0, bunnies: 0, races: 0, wins: 0 },
@@ -116,6 +120,8 @@ const Game = (() => {
     const s = Object.assign(fresh, data);
     s.inv = Object.assign(newState().inv, data.inv);
     s.tack = Object.assign(newState().tack, data.tack);
+    s.tack.saddleStyles = Object.assign({ classic: true }, s.tack.saddleStyles);
+    s.tack.bridleStyles = Object.assign({ classic: true }, s.tack.bridleStyles);
     s.stats = Object.assign(newState().stats, data.stats);
     s.player = Object.assign(newState().player, data.player);
     s.player.mountId = null;
@@ -142,17 +148,44 @@ const Game = (() => {
   /* ---------------- помощники ---------------- */
   const mounted = () => (S.player.mountId != null ? S.horses.find(h => h.id === S.player.mountId) || null : null);
   const byId = id => S.horses.find(h => h.id === id);
-  function freeStall() {
+  // денники: 0–19 главная конюшня, 20+ маленькие конюшни, 1000+ конюшни на островах (по 5)
+  const ISLAND_STALL = 1000;
+  function freeStall(where = 'main') {
     const used = new Set(S.horses.map(h => h.stall));
+    if (where !== 'main') {
+      const k = World.ISLANDS.findIndex(I => I.id === where);
+      for (let i = 0; i < 5; i++) if (!used.has(ISLAND_STALL + k * 5 + i)) return ISLAND_STALL + k * 5 + i;
+      return -1;
+    }
     for (let i = 0; i < Farm.maxStalls(); i++) if (!used.has(i)) return i;
     return -1;
   }
+  const islandOfStall = i => (i >= ISLAND_STALL ? World.ISLANDS[Math.floor((i - ISLAND_STALL) / 5)] : null);
+  function stallLabel(i) {
+    const I = islandOfStall(i);
+    return I ? `${I.name}, денник №${(i - ISLAND_STALL) % 5 + 1}` : `№${i + 1}`;
+  }
+  const totalStalls = () => Farm.maxStalls() + World.ISLANDS.length * 5;
+  function stallGroups() {
+    const main = [];
+    for (let i = 0; i < Farm.maxStalls(); i++) main.push(i);
+    return [{ title: 'Ферма', list: main }].concat(World.ISLANDS.map((I, k) => ({ title: `🏝️ ${I.name}`, list: [0, 1, 2, 3, 4].map(j => ISLAND_STALL + k * 5 + j) })));
+  }
+  // остров, у конюшни или пастбища которого стоит игрок
+  function islandStableHere(p) {
+    return World.ISLANDS.find(I => World.inRect(p.x, p.y, I.stable, 70) || World.inRect(p.x, p.y, I.pasture, 60)) || null;
+  }
+  const paddockFor = h => (islandOfStall(h.stall) ? islandOfStall(h.stall).pasture : World.PADDOCK);
   const horseInStall = i => S.horses.find(h => h.stall === i) || null;
   const atFarm = () => {
     const p = S.player;
-    return World.inRect(p.x, p.y, World.STABLE, 40) || World.inRect(p.x, p.y, World.PADDOCK, 50) || Farm.nearStable(p);
+    return World.inRect(p.x, p.y, World.STABLE, 40) || World.inRect(p.x, p.y, World.PADDOCK, 50) || Farm.nearStable(p) || !!islandStableHere(p);
   };
-  const stallSpot = i => (i < 20 ? World.stallSpot(i) : Farm.extraSpot(i) || World.stallSpot(0));
+  function stallSpot(i) {
+    const I = islandOfStall(i);
+    if (I) { const k = (i - ISLAND_STALL) % 5; return { x: I.stable.x + 34 + k * 68, y: I.stable.y + 72, angle: Math.PI / 2 }; }
+    return i < 20 ? World.stallSpot(i) : Farm.extraSpot(i) || World.stallSpot(0);
+  }
   function stat(k, n = 1) { S.stats[k] = (S.stats[k] || 0) + n; }
   function float(text, x, y, color = '#333') { floats.push({ text, x, y, t: 0, color }); }
 
@@ -170,7 +203,14 @@ const Game = (() => {
     field: { area: World.FIELD, count: WILD_COUNT, sleeps: true, name: 'в поле' },
     magic: { area: { x: World.MUSHROOM.x + 150, y: World.MUSHROOM.y + 150, w: World.MUSHROOM.w - 300, h: World.MUSHROOM.h - 300 }, count: 6, sleeps: true, name: 'в Грибном королевстве' },
     cave: { area: { x: World.CAVE.x + 100, y: World.CAVE.y + 100, w: World.CAVE.w - 200, h: World.CAVE.h - 200 }, count: 4, sleeps: false, name: 'в пещере' },
+    desert: { area: { x: World.DESERT.x + 200, y: World.DESERT.y + 200, w: World.DESERT.w - 400, h: World.DESERT.h - 400 }, count: 6, sleeps: true, name: 'в пустыне' },
+    tundra: { area: { x: World.TUNDRA.x + 200, y: World.TUNDRA.y + 200, w: World.TUNDRA.w - 400, h: World.TUNDRA.h - 400 }, count: 6, sleeps: true, name: 'в тундре' },
   };
+  // на каждом острове — 5 диких лошадей, раз в 5 минут они меняются
+  for (const I of World.ISLANDS) HERDS[I.id] = { area: I.area, count: 5, sleeps: true, name: `на острове «${I.name}»`, island: I };
+  const ISLAND_REFRESH = 300;
+  let islandT = ISLAND_REFRESH;
+  const HOME_BREEDS = { desert: ['akhal', 'akhal', 'arab', 'arab', 'arab'], tundra: ['yakut', 'yakut', 'yakut', 'yakut', 'fjord', 'icehorse'] };
   for (const k in HERDS) Object.assign(HERDS[k], { id: k, x: 0, y: 0, tx: 0, ty: 0, t: 0, panic: 0, respawnT: 0 });
 
   function randomFieldPoint(margin = 150, area = World.FIELD) {
@@ -183,6 +223,8 @@ const Game = (() => {
   }
 
   function pickBreed(home = 'field') {
+    if (HOME_BREEDS[home]) return HOME_BREEDS[home][Math.floor(Math.random() * HOME_BREEDS[home].length)];
+    if (HERDS[home] && HERDS[home].island) { const b = HERDS[home].island.breeds; return b[Math.floor(Math.random() * b.length)]; }
     const entries = Object.entries(Genetics.BREEDS).filter(([, b]) => (home === 'field' ? b.weight > 0 : b.home === home));
     let total = entries.reduce((s, [, b]) => s + (home === 'field' ? b.weight : b.hw), 0), r = Math.random() * total;
     for (const [k, b] of entries) { r -= home === 'field' ? b.weight : b.hw; if (r <= 0) return k; }
@@ -302,8 +344,8 @@ const Game = (() => {
         w.y = clamp(w.y, F.y - 60, F.y + F.h + 60);
       }
 
-      // новые лошади приходят взамен пойманных
-      if (members.length < herd.count) {
+      // новые лошади приходят взамен пойманных (на островах — только при смене табуна)
+      if (members.length < herd.count && !herd.island) {
         herd.respawnT -= dt;
         if (herd.respawnT <= 0) {
           herd.respawnT = rand(8, 16);
@@ -315,10 +357,45 @@ const Game = (() => {
     }
   }
 
+  function refreshIslands(dt) {
+    islandT -= dt;
+    if (islandT > 0) return;
+    islandT = ISLAND_REFRESH;
+    for (const I of World.ISLANDS) {
+      wild = wild.filter(w => w.home !== I.id);
+      const H = HERDS[I.id];
+      const c = randomFieldPoint(200, I.area);
+      H.x = H.tx = c.x; H.y = H.ty = c.y;
+      for (let i = 0; i < H.count; i++) {
+        const q = randomFieldPoint(120, I.area);
+        wild.push(makeWild(q.x, q.y, I.id));
+      }
+    }
+    UI.toast('🏝️ На островах появились новые дикие лошади!', 'good');
+  }
+  const islandTimeLeft = () => islandT;
+
+  // круглый манеж на острове: каталась кругами — выездка и скорость немного растут
+  let penT = 0;
+  function updatePen(dt) {
+    const p = S.player, m = mounted();
+    if (!m || p.spd < 40) return;
+    const I = World.ISLANDS.find(q => Math.hypot(p.x - q.pen.x, p.y - q.pen.y) < q.pen.r);
+    if (!I) return;
+    penT += dt;
+    if (penT >= 8) {
+      penT = 0;
+      Horses.addTrain(m, 'dressage', 0.6);
+      Horses.addTrain(m, p.gait === 2 ? 'speed' : 'stamina', 0.4);
+      float('🎠 +тренировка', p.x, p.y - 30, '#1b8a3a');
+      stat('penTime', 8);
+    }
+  }
+
   /* ---------------- свои лошади ---------------- */
   function updateOwned(dt) {
-    const P = World.PADDOCK;
     for (const h of S.horses) {
+      const P = paddockFor(h);
       h.age += dt / 120; // 2 минуты = 1 год
       const inPaddock = h.state === 'paddock';
       h.hunger = clamp(h.hunger - dt * (inPaddock ? 0.03 : 0.07), 0, 100);
@@ -420,12 +497,13 @@ const Game = (() => {
       moveToward(led, back.x, back.y, d > 25 ? Math.min(d * 3, 300) : 0, dt, 5);
       led.headTurn = 0;
       World.collide(led, 16);
-      if (!p.fly && (World.inRect(p.x, p.y, World.STABLE, 10) || Farm.nearStable(p))) {
-        const st = freeStall();
+      const isl = islandStableHere(p);
+      if (!p.fly && (World.inRect(p.x, p.y, World.STABLE, 10) || Farm.nearStable(p) || (isl && World.inRect(p.x, p.y, isl.stable, 20)))) {
+        const st = freeStall(isl ? isl.id : 'main');
         if (st >= 0) {
           led.state = 'stall'; led.stall = st; led.flee = 0;
           S.horses.push(led);
-          UI.toast(`🏠 ${led.name} теперь живёт в деннике №${st + 1}!`, 'good');
+          UI.toast(`🏠 ${led.name} теперь живёт: ${stallLabel(st)}!`, 'good');
           Sound.coin();
           led = null;
         } else if (time > fullWarnT) {
@@ -479,6 +557,10 @@ const Game = (() => {
       led = w;
       S.stats.caught++;
       if (Horses.isMagic(w)) stat('magicCaught');
+      if (w.magic && w.magic.wings) stat('wing_' + Horses.wingType(w.magic.wings));
+      if (w.magic && ['bee', 'dragonfly'].includes(Horses.wingType(w.magic.wings))) stat('wingSmall');
+      if (w.home === 'desert' || w.home === 'tundra') stat('caught_' + w.home);
+      if (HERDS[w.home] && HERDS[w.home].island) stat('caught_island');
       if (w.magic && w.magic.skeleton) stat('skeletonCaught');
       const ph = Horses.pheno(w);
       UI.toast(`🎉 Поймала! ${w.name}: ${Genetics.BREEDS[w.breed].name.toLowerCase()}, ${ph.name}. Веди в конюшню!`, 'good');
@@ -787,13 +869,13 @@ const Game = (() => {
       m.state = 'stall';
       S.player.mountId = null;
       S.player.vx = S.player.vy = 0;
-      UI.toast(`${m.name} ${Horses.v(m, 'вернулась', 'вернулся')} в денник №${m.stall + 1}`);
+      UI.toast(`${m.name} ${Horses.v(m, 'вернулась', 'вернулся')}: ${stallLabel(m.stall)}`);
     },
     paddock(h) {
       if (!atFarm()) return UI.toast('Подойди к конюшне или леваде');
       if (h.state === 'paddock') { h.state = 'stall'; UI.toast(`${h.name} ${Horses.v(h, 'вернулась', 'вернулся')} в денник`); }
       else if (h.state === 'stall') {
-        const P = World.PADDOCK;
+        const P = paddockFor(h);
         h.state = 'paddock';
         h.x = rand(P.x + 60, P.x + P.w - 60); h.y = rand(P.y + 60, P.y + P.h - 60); h.wander = null;
         UI.toast(`🌿 ${h.name} гуляет в леваде`);
@@ -872,6 +954,30 @@ const Game = (() => {
     },
     setColor(item, color) { if (S.tack[item]) S.tack[item] = color; },
     setShirt(color) { S.player.shirt = color; },
+    buyStyle(kind, style) {
+      const st = Items.TACK_STYLES[style], price = st[kind];
+      const own = S.tack[kind + 'Styles'];
+      if (!S.tack[kind]) return UI.toast(kind === 'saddle' ? 'Сначала купи обычное седло' : 'Сначала купи обычную уздечку', 'warn');
+      if (own[style]) { S.tack[kind + 'Style'] = style; return; }
+      if (S.money < price) return UI.toast('Не хватает монет', 'warn');
+      S.money -= price;
+      own[style] = true;
+      S.tack[kind + 'Style'] = style;
+      UI.toast(`Куплено: ${st.name.toLowerCase()} ${kind === 'saddle' ? 'седло' : 'оголовье'}!`, 'good');
+      Sound.coin();
+    },
+    setTackColor(kind, color) { S.tack[kind + 'Color'] = color; Sound.tick(); },
+    sail(to) {
+      const p = S.player, m = mounted();
+      const dest = to === 'main' ? { x: World.PIER.x - 90, y: World.PIER.y, name: 'большую землю' } : (() => { const I = World.ISLANDS.find(q => q.id === to); return { x: I.pier.x + 110, y: I.pier.y, name: `остров «${I.name}»` }; })();
+      if (ex || Events.busy()) return UI.toast('Сначала закончи упражнение или скачки');
+      UI.closeModal();
+      p.x = dest.x; p.y = dest.y; p.vx = p.vy = 0; p.target = null; p.fly = false;
+      if (m) { m.x = p.x; m.y = p.y; }
+      if (led) { led.x = p.x - 60; led.y = p.y + 40; led.vx = led.vy = 0; }
+      UI.toast(`⛵ Лодка доплыла на ${dest.name}!`, 'good');
+      Sound.fanfare();
+    },
     releaseLed() {
       if (!led) return;
       led.state = 'wild'; led.flee = 2; led.slot = { x: rand(-150, 150), y: rand(-110, 110) };
@@ -892,7 +998,7 @@ const Game = (() => {
     lasso() { startLasso(nearestCatchable()); },
     toggleFly() {
       const p = S.player, m = mounted();
-      if (!m || !(m.magic && m.magic.wings)) return UI.toast('Летать умеют только лошади с крыльями — пегасы 🪽');
+      if (!m || !(m.magic && m.magic.wings)) return UI.toast('Летать умеют только лошади с крыльями: пегасы, бабочки, драконы, вороны, стрекозы и пчёлки');
       if (p.fly) {
         if (World.blocked(p.x, p.y, 20)) return UI.toast('Здесь не приземлиться — найди ровное место', 'warn');
         p.fly = false;
@@ -962,6 +1068,9 @@ const Game = (() => {
     if (fp) return fp;
     const qp = Quests.prompt();
     if (qp) return qp;
+    const piers = [World.PIER].concat(World.ISLANDS.map(I => I.pier));
+    if (piers.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 130)) return { label: '⛵ Лодка', fn: () => UI.openBoat() };
+    if (islandStableHere(p)) return { label: '🐴 Мои лошади', fn: () => UI.openStable(true) };
     const ep = Events.prompt();
     if (ep) return ep;
     if (World.inRect(p.x, p.y, World.STABLE, 30) || World.inRect(p.x, p.y, World.PADDOCK, 30) || Farm.nearStable(p))
@@ -1078,7 +1187,12 @@ const Game = (() => {
 
   /* ---------------- отрисовка ---------------- */
   function rider() {
-    return { pad: S.tack.pad || '#7a6a55', helmet: S.tack.helmet || '#222a3a', boots: S.tack.boots, shirt: S.player.shirt };
+    const t = S.tack;
+    return {
+      pad: t.pad || '#7a6a55', helmet: t.helmet || '#222a3a', boots: t.boots, shirt: S.player.shirt,
+      saddleStyle: t.saddleStyle || 'classic', saddleColor: t.saddleColor || '#5b3a1e',
+      bridleStyle: t.bridleStyle || 'classic', bridleColor: t.bridleColor || '#2b1a10',
+    };
   }
 
   // поверх 3D-сцены — прозрачный холст с надписями, стрелками, дождём
@@ -1187,6 +1301,8 @@ const Game = (() => {
       updateOwned(dt);
       Events.update(dt);
       Farm.update(dt);
+      refreshIslands(dt);
+      updatePen(dt);
       Creatures.update(dt);
       visitT -= dt;
       if (visitT <= 0) { visitT = 0.5; Quests.updateVisits(); }
@@ -1208,7 +1324,7 @@ const Game = (() => {
       hudT = 0.1;
       const m = mounted();
       UI.updateHud({
-        money: S.money, count: S.horses.length, max: Farm.maxStalls(), stats: S.stats, hint: hint(),
+        money: S.money, count: S.horses.length, max: totalStalls(), stats: S.stats, hint: hint(),
         prompt: computePrompt(), canLasso: !!nearestCatchable() && !lasso,
         mounted: m ? { name: m.name, gait: S.player.gait, energy: m.energy, wings: !!(m.magic && m.magic.wings), fly: !!S.player.fly } : null,
         led: led ? led.name : null, exercise: Farm.hud() || exerciseHud(), clock: clockText(),
@@ -1221,6 +1337,7 @@ const Game = (() => {
 
   const api = {
     get S() { return S; }, FOOD, TACK, TESTS, COLORS, GAITS, act, maxStalls: () => Farm.maxStalls(), stat, isNight, stallSpot,
+    stallLabel, stallGroups, islandTimeLeft,
     wild: () => wild, led: () => led, exercise: () => ex, time: () => time, view: () => ({ x: cam.x, y: cam.y, w: viewW, h: viewH }),
     mounted, byId, freeStall, horseInStall, atFarm, daylight, rider, riderLift, catchable: () => nearestCatchable(),
     comfortHeight, JUMP_HEIGHTS, JUMP_NORM,

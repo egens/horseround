@@ -59,6 +59,24 @@ const Quests = (() => {
       hello: ['Тише... рыба клюёт!', 'Большое озеро — самое красивое место на свете.', 'За озером горы, а в горах — пещера.'],
       tips: ['Вход в пещеру — с западной стороны гор, по дороге от озера.'],
     },
+    {
+      id: 'marina', name: 'Капитан Марина', x: 9430, y: 4800, role: 'капитан лодки',
+      look: { shirt: '#ffffff', pants: '#1864ab', hair: '#f08c00', hat: 'cap', hatColor: '#1c3d6e' },
+      hello: ['Свистать всех наверх! Куда поплывём?', 'На островах живут лошади с самыми удивительными крыльями!', 'Каждые пять минут на островах появляются новые дикие лошадки.'],
+      tips: ['Лодка у причала: подойди и нажми «⛵ Лодка».', 'На каждом острове есть своя конюшня — можно оставить там лошадь.', 'Драконьи лошади очень горячие — лови их верхом.'],
+    },
+    {
+      id: 'zara', name: 'Караванщица Зара', x: 1850, y: 7250, role: 'караванщица',
+      look: { shirt: '#f4a261', pants: '#e9c46a', hair: '#2b2b2b', hat: 'scarf', hatColor: '#e76f51' },
+      hello: ['В пустыне днём жарко, а ночью звёзды ярче всего!', 'Ахалтекинцы — потомки древних коней пустыни. Их шерсть блестит золотом.', 'У оазиса растут пальмы — там можно передохнуть.'],
+      tips: ['Оазис — в самом сердце пустыни, иди по дороге на юг от леса.', 'Арабские лошади очень выносливые.'],
+    },
+    {
+      id: 'aita', name: 'Северянка Айта', x: 7400, y: 6950, role: 'жительница тундры',
+      look: { shirt: '#4361ee', pants: '#ffffff', hair: '#1b1b1b', hat: 'hat', hatColor: '#e63946' },
+      hello: ['Брр! В тундре всегда снег, но якутские лошадки не мёрзнут.', 'У якутских лошадей густая шерсть и длинная грива — настоящие шубки!', 'Ледяное озеро замёрзло, по льду ходить нельзя.'],
+      tips: ['Скалы со снегом высокие — обходи их.', 'Ледяные лошадки иногда забредают сюда из Грибного королевства.'],
+    },
   ];
 
   // goal: { stat, n } — счётчик вырос на n; { flag } — флаг выставлен; { item, n } — отдать вещи
@@ -96,6 +114,21 @@ const Quests = (() => {
     { id: 'l2', npc: 'lola', title: 'Яркие краски', text: 'Покрась гриву лошади краской.', goal: { stat: 'maneDyed', n: 1 }, reward: { money: 50, dye_purple: 1 } },
 
     { id: 'o1', npc: 'olya', title: 'Большое озеро', text: 'Объедь Большое озеро: побывай у его восточного берега.', goal: { flag: 'visit_lake_east' }, reward: { money: 40 } },
+    { id: 's1', npc: 'marina', title: 'Морское путешествие', text: 'Сплавай на лодке на любой остров.', goal: { islands: 1 }, reward: { money: 50 } },
+    { id: 's2', npc: 'marina', title: 'Все три острова', text: 'Побывай на всех трёх островах.', goal: { islands: 3 }, reward: { money: 120, dye_blue: 1 } },
+    { id: 's3', npc: 'marina', title: 'Лошадь-бабочка', text: 'Поймай лошадь с крыльями бабочки на Острове бабочек.', goal: { stat: 'wing_butterfly', n: 1 }, reward: { money: 150, dye_pink: 1 } },
+    { id: 's4', npc: 'marina', title: 'Драконья лошадь', text: 'Поймай драконью лошадь на Драконьем острове.', goal: { stat: 'wing_dragon', n: 1 }, reward: { money: 200, dye_gold: 1 } },
+    { id: 's5', npc: 'marina', title: 'Стрекоза и пчёлка', text: 'Поймай лошадь-стрекозу и лошадь-пчёлку.', goal: { stat: 'wingSmall', n: 2 }, reward: { money: 180, dye_mint: 1 } },
+    { id: 's6', npc: 'marina', title: 'Крылья ворона', text: 'Поймай лошадь с крыльями ворона.', goal: { stat: 'wing_raven', n: 1 }, reward: { money: 160 } },
+
+    { id: 'z1', npc: 'zara', title: 'Пески', text: 'Дойди до пустыни на юге.', goal: { flag: 'visit_desert' }, reward: { money: 40 } },
+    { id: 'z2', npc: 'zara', title: 'Оазис', text: 'Найди оазис с пальмами в сердце пустыни.', goal: { flag: 'visit_oasis' }, reward: { money: 60, apple: 5 } },
+    { id: 'z3', npc: 'zara', title: 'Конь пустыни', text: 'Поймай ахалтекинца или арабскую лошадь в пустыне.', goal: { stat: 'caught_desert', n: 1 }, reward: { money: 130 } },
+
+    { id: 'a1', npc: 'aita', title: 'Северная гостья', text: 'Доберись до тундры на юго-востоке.', goal: { flag: 'visit_tundra' }, reward: { money: 40 } },
+    { id: 'a2', npc: 'aita', title: 'Мохнатая лошадка', text: 'Поймай якутскую лошадь в тундре.', goal: { stat: 'caught_tundra', n: 1 }, reward: { money: 130, oats: 5 } },
+    { id: 'a3', npc: 'aita', title: 'Сквозь чащу', text: 'Пройди дремучий лес между пустыней и тундрой.', goal: { flag: 'visit_deepforest' }, reward: { money: 50 } },
+
     { id: 'o2', npc: 'olya', title: 'Пещера в горах', text: 'Найди вход в пещеру и загляни внутрь.', goal: { flag: 'visit_cave' }, reward: { money: 60 } },
   ];
 
@@ -125,6 +158,7 @@ const Quests = (() => {
   function progress(q, st) {
     const g = q.goal;
     if (g.flag) return { cur: G.S.flags[g.flag] ? 1 : 0, need: 1 };
+    if (g.islands) return { cur: Math.min(g.islands, World.ISLANDS.filter(I => G.S.flags['visit_' + I.id]).length), need: g.islands };
     if (g.item) return { cur: Math.min(g.n, G.S.inv[g.item] || 0), need: g.n };
     return { cur: Math.max(0, Math.min(g.n, Math.floor(stat(g.stat) - (st.base || 0)))), need: g.n };
   }
@@ -206,6 +240,12 @@ const Quests = (() => {
     if (reg === 'cave') visit('visit_cave', '🦇 Ты в пещере. Здесь темно... и кто-то бродит.');
     if (reg === 'lake') visit('visit_lake');
     if (p.x > 5450 && Math.abs(p.y - 1150) < 600 && reg === 'lake') visit('visit_lake_east', '🌊 Восточный берег Большого озера!');
+    if (reg === 'desert') visit('visit_desert', '🏜️ Пустыня! Здесь живут ахалтекинские и арабские лошади.');
+    if (reg === 'tundra') visit('visit_tundra', '❄️ Тундра! Здесь живут мохнатые якутские лошади.');
+    if (reg === 'deepforest') visit('visit_deepforest', '🌲 Дремучий лес. Здесь темно даже днём.');
+    if (Math.hypot(p.x - 2100, p.y - 8000) < 520) visit('visit_oasis', '🌴 Оазис! Вода и пальмы посреди песков.');
+    const I = World.islandAt(p.x, p.y);
+    if (I && !f['visit_' + I.id]) { visit('visit_' + I.id, `🏝️ ${I.name}! Здесь конюшня, пастбище, манеж и 5 диких лошадей.`); G.stat('islandsVisited'); }
   }
 
   function nearNpc(r = 80) {

@@ -87,19 +87,28 @@ const Horses = (() => {
   function inheritMagic(a, b) {
     a = a || {}; b = b || {};
     const m = {};
-    for (const k of ['wings', 'horn', 'skeleton']) {
+    for (const k of ['horn', 'skeleton']) {
       const n = (a[k] ? 1 : 0) + (b[k] ? 1 : 0);
       if (n && Math.random() < (n === 2 ? 0.75 : 0.5)) m[k] = true;
     }
+    // крылья: тип берём от одного из родителей
+    const wings = [a.wings, b.wings].filter(Boolean).map(wingType);
+    if (wings.length && Math.random() < (wings.length === 2 ? 0.75 : 0.5)) m.wings = pick(wings);
     const manes = [a.mane, b.mane].filter(Boolean);
     if (manes.length && Math.random() < (manes.length === 2 ? 0.75 : 0.5)) m.mane = pick(manes);
     return Object.keys(m).length ? m : null;
   }
+  // старые сохранения: wings: true — это пегас
+  const wingType = w => (w === true ? 'pegasus' : w);
+  const WING_NAMES = {
+    pegasus: 'крылья пегаса 🪽', butterfly: 'крылья бабочки 🦋', dragon: 'крылья дракона 🐉',
+    raven: 'крылья ворона 🪶', dragonfly: 'крылья стрекозы', bee: 'крылья пчёлки 🐝',
+  };
   function magicText(h) {
     const m = h.magic;
     if (!m) return '';
     const p = [];
-    if (m.wings) p.push('крылья 🪽');
+    if (m.wings) p.push(WING_NAMES[wingType(m.wings)]);
     if (m.horn) p.push('рог 🦄');
     if (m.mane === 'fire') p.push('огненная грива 🔥');
     if (m.mane === 'ice') p.push('ледяная грива ❄️');
@@ -172,7 +181,7 @@ const Horses = (() => {
 
   return {
     SKILLS, v, create, foal, pheno, isAdult, sizeOf, skill, addTrain, ageText, sexText, marksText, price,
-    randomName, magicText, isMagic,
+    randomName, magicText, isMagic, wingType, WING_NAMES,
     get nextId() { return nextId; },
     set nextId(v) { nextId = v; },
   };

@@ -424,6 +424,20 @@ const Events = (() => {
       ctx.restore();
     }
     if (wet <= 0.01) return;
+    const reg = World.regionAt(G.S.player.x, G.S.player.y);
+    if (reg === 'desert' || reg === 'cave') return;          // в пустыне и в пещере дождя нет
+    if (reg === 'tundra') {                                   // в тундре вместо дождя — снег
+      const n = Math.floor(180 * wet * (w * h) / (1280 * 800));
+      while (drops.length < n) drops.push({ x: Math.random() * w, y: Math.random() * h, s: 0.7 + Math.random() * 0.6 });
+      drops.length = Math.min(drops.length, n);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      for (const d of drops) {
+        d.y += 2.5 * d.s * k; d.x += Math.sin(t * 2 + d.s * 10) * 0.8 * k;
+        if (d.y > h) { d.y = -10; d.x = Math.random() * w; }
+        ctx.fillRect(d.x, d.y, 3 * d.s * k, 3 * d.s * k);
+      }
+      return;
+    }
     ctx.fillStyle = `rgba(60,75,95,${0.22 * wet})`;
     ctx.fillRect(0, 0, w, h);
     const n = Math.floor(260 * wet * (w * h) / (1280 * 800));

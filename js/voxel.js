@@ -242,6 +242,69 @@ const Voxel = (() => {
     return { cells, glow };
   }
 
+  // крылья разных видов: z — наружу от тела, x — вдоль тела
+  const pickBy = (h, arr, k = 0) => arr[(h.seed + k) % arr.length];
+  function wingDef(type, h, ph) {
+    const cells = new Map();
+    const set = (x, z, c) => cells.set(key3(x, 0, z), c);
+    if (type === 'raven') {
+      // крыло ворона по форме, но не чёрное
+      const base = pickBy(h, ['#8d99ae', '#a68a64', '#6c8ebf', '#9c6ade', '#5fa8a0', '#c97b63', '#d4a373']);
+      const light = Genetics.mix(base, '#ffffff', 0.35), dark = Genetics.mix(base, '#000000', 0.25);
+      for (let z = 0; z < 11; z++) {
+        const len = 7 - Math.floor(z * 0.35) + (z > 6 ? 2 : 0);
+        for (let x = -len; x <= 1; x++) {
+          if (z >= 7 && x < -3 && (x + z) % 2) continue;                 // «пальцы» маховых перьев
+          set(x, z, z < 3 ? light : x < -len + 2 ? dark : base);
+        }
+      }
+      return { cells, glass: false };
+    }
+    if (type === 'butterfly') {
+      const pal = pickBy(h, [['#ff8c1a', '#ffd166'], ['#3a86ff', '#90e0ef'], ['#ff7eb6', '#ffd6e8'], ['#ffd60a', '#fff3b0'], ['#9b5de5', '#f15bb5']]);
+      const inside = (x, z) => ((x - 2.5) / 4) ** 2 + ((z - 4.5) / 4.6) ** 2 < 1 || ((x + 3.5) / 3.2) ** 2 + ((z - 3) / 3.6) ** 2 < 1;
+      for (let x = -7; x <= 7; x++) for (let z = 0; z <= 9; z++) {
+        if (!inside(x, z)) continue;
+        const edge = !inside(x + 1, z) || !inside(x - 1, z) || !inside(x, z + 1) || !inside(x, z - 1);
+        let c = edge ? '#1b1b1b' : (x + z) % 4 === 0 ? Genetics.mix(pal[0], '#000000', 0.25) : (z > 5 ? pal[1] : pal[0]);
+        if (!edge && (x === 3 && z === 6 || x === 1 && z === 7 || x === -3 && z === 4)) c = '#ffffff';
+        set(x, z, c);
+      }
+      return { cells, glass: false };
+    }
+    if (type === 'dragon') {
+      const mem = pickBy(h, ['#8b1e3f', '#2d6a4f', '#5a189a', '#b5651d', '#264653']);
+      const bone = '#3d2b1f';
+      for (let z = 0; z <= 11; z++) {
+        const minX = -Math.round(z * 0.75) - 1;
+        for (let x = minX; x <= 1; x++) {
+          if (x === minX && z % 3 === 1) continue;                        // зубчатый край перепонки
+          const isBone = x === 1 || (z > 2 && (x === Math.round(-z * 0.25) || x === Math.round(-z * 0.5)));
+          set(x, z, isBone ? bone : Genetics.mix(mem, '#000000', (z % 3) * 0.06));
+        }
+      }
+      set(2, 11, bone); set(2, 10, bone);
+      return { cells, glass: false };
+    }
+    if (type === 'dragonfly') {
+      const tint = pickBy(h, ['#bde0fe', '#caffbf', '#ffd6ff', '#fdffb6']);
+      for (let z = 0; z <= 10; z++) for (let x = 0; x <= 2; x++) if (!(z === 10 && x !== 1)) set(x, z, z % 3 === 0 ? '#adb5bd' : tint);
+      for (let z = 0; z <= 9; z++) for (let x = -4; x <= -2; x++) if (!(z === 9 && x !== -3)) set(x, z, z % 3 === 0 ? '#adb5bd' : tint);
+      return { cells, glass: true };
+    }
+    if (type === 'bee') {
+      for (let x = -3; x <= 2; x++) for (let z = 0; z <= 5; z++) if (((x + 0.5) / 3) ** 2 + ((z - 2.5) / 3) ** 2 < 1) set(x, z, z % 2 ? '#e7f5ff' : '#f8f9fa');
+      return { cells, glass: true };
+    }
+    return { cells: wingCells(h, ph), glass: false };
+  }
+  const FLAP = {
+    pegasus: { speed: 9, amp: 0.7, rest: -0.9 }, raven: { speed: 8, amp: 0.75, rest: -0.9 },
+    butterfly: { speed: 5, amp: 0.9, rest: -1.2 }, dragon: { speed: 4.5, amp: 0.8, rest: -0.6 },
+    dragonfly: { speed: 32, amp: 0.22, rest: -0.05 }, bee: { speed: 42, amp: 0.3, rest: -0.2 },
+  };
+  let glassMat = null;
+
   // крыло пегаса: перья веером вбок и назад
   function wingCells(h, ph) {
     const cells = new Map();
@@ -257,9 +320,30 @@ const Voxel = (() => {
     const cells = new Map();
     const put = (x, y, z, c) => cells.set(key3(x, y, z), c);
     const fill = (x0, x1, y0, y1, z0, z1, c) => { for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) put(x, y, z, c); };
+    const glow = new Map();
+    const gl = (x, y, z, c) => glow.set(key3(x, y, z), c);
+    const sc = R.saddleColor || '#5b3a1e', bc = R.bridleColor || '#2b1a10';
     fill(-4, 1, 13, 13, -4, 3, R.pad);            // вальтрап
-    fill(-3, 0, 14, 14, -2, 1, '#5b3a1e');        // седло
-    fill(-4, -4, 14, 15, -2, 1, '#5b3a1e');
+    fill(-3, 0, 14, 14, -2, 1, sc);               // седло
+    fill(-4, -4, 14, 15, -2, 1, sc);
+    put(1, 14, -1, sc); put(1, 14, 0, sc);        // лука седла
+    // уздечка: нащёчные ремни, капсюль, поводья к рукам
+    for (let x = 12; x <= 14; x++) { put(x, 15, -2, bc); put(x, 15, 1, bc); }
+    put(14, 14, -2, bc); put(14, 14, 1, bc); put(15, 16, -1, bc); put(15, 16, 0, bc);
+    for (let x = 4; x <= 11; x++) { const y = 17 - Math.round((x - 4) / 4); put(x, y, -3, bc); put(x, y, 2, bc); }
+    const st = R.saddleStyle || 'classic', bs = R.bridleStyle || 'classic';
+    if (st === 'crystal') {
+      for (const [x, y, z, c] of [[1, 15, -1, '#74c0fc'], [1, 15, 0, '#f783ac'], [-4, 16, -1, '#b197fc'], [-4, 16, 0, '#63e6be'], [-4, 13, -5, '#74c0fc'], [1, 13, -5, '#f783ac'], [-4, 13, 4, '#63e6be'], [1, 13, 4, '#b197fc']]) gl(x, y, z, c);
+    } else if (st === 'plant') {
+      for (let x = -4; x <= 1; x++) { put(x, 13, -5, x % 2 ? '#2f9e44' : '#69db7c'); put(x, 13, 4, x % 2 ? '#69db7c' : '#2f9e44'); }
+      put(-4, 16, -1, '#2f9e44'); put(-4, 16, 0, '#69db7c'); put(-1, 13, -6, '#ff8fab'); put(-1, 13, 5, '#ffd43b'); put(1, 15, 0, '#ff8fab');
+    } else if (st === 'shell') {
+      for (let x = -4; x <= 1; x += 2) { put(x, 13, -5, '#ffc9de'); put(x + 1, 13, -5, '#fff5f0'); put(x, 13, 4, '#fff5f0'); put(x + 1, 13, 4, '#ffc9de'); }
+      put(-4, 16, -1, '#ffc9de'); put(-4, 16, 0, '#fff5f0'); gl(1, 15, 0, '#fff9f5');
+    }
+    if (bs === 'crystal') { gl(12, 16, -2, '#74c0fc'); gl(12, 16, 1, '#f783ac'); gl(14, 16, -1, '#b197fc'); }
+    else if (bs === 'plant') { put(12, 16, -2, '#69db7c'); put(12, 16, 1, '#2f9e44'); put(13, 16, -2, '#ff8fab'); put(13, 16, 1, '#ffd43b'); }
+    else if (bs === 'shell') { put(13, 16, -2, '#ffc9de'); put(13, 16, 1, '#fff5f0'); gl(14, 16, 0, '#fff9f5'); }
     fill(-2, -1, 10, 13, -4, -4, '#33415c');      // ноги
     fill(-2, -1, 10, 13, 3, 3, '#33415c');
     fill(-2, -1, 8, 9, -4, -4, '#1f1d22');        // сапоги
@@ -274,7 +358,7 @@ const Voxel = (() => {
     fill(1, 1, 22, 22, -1, 0, R.helmet);          // козырёк
     put(0, 21, -1, '#2b2b2b'); put(0, 21, 0, '#2b2b2b');
     fill(-5, -4, 19, 21, -1, 0, '#7a4a22');       // хвостик
-    return cells;
+    return { cells, glow };
   }
 
   // жители и девочка: одна модель с разной одеждой
@@ -362,15 +446,17 @@ const Voxel = (() => {
     group.add(tail);
     const wings = [];
     if (mag.wings) {
-      const wc = wingCells(h, ph);
+      const type = Horses.wingType(mag.wings);
+      const def = wingDef(type, h, ph);
+      const geo = voxelGeometry(def.cells, V, h.seed + 20);
       for (const s of [-1, 1]) {
         const pivot = new T.Group();
         pivot.position.set(2 * V, 12.5 * V, (s > 0 ? 3 : -3) * V);
-        const m = mk(voxelGeometry(wc, V, h.seed + 20));
+        const m = def.glass && !material ? new T.Mesh(geo, glassMat) : mk(geo);
         if (s < 0) { m.scale.z = -1; }
         pivot.add(m);
         group.add(pivot);
-        wings.push({ pivot, s });
+        wings.push({ pivot, s, f: FLAP[type] || FLAP.pegasus });
       }
     }
     return { group, legs, tail, wings, ph, rider: null, riderKey: '' };
@@ -384,7 +470,7 @@ const Voxel = (() => {
 
   /* ---------- земля ---------- */
   function groundTexture() {
-    const S = 0.25;
+    const S = 0.2;
     const c = document.createElement('canvas');
     c.width = World.W * S; c.height = World.H * S;
     const g = c.getContext('2d');
@@ -451,7 +537,8 @@ const Voxel = (() => {
       for (let i = 0; i < tiers; i++) {
         const w = R * (1.7 - i * (1.4 / tiers)) * (k === 'spruce' ? 1.05 : 0.95);
         const y = (2.4 + i * 1.5) * tall;
-        L.push(box(x, y, z, w, 1.4 * tall, w, i % 2 ? (k === 'spruce' ? '#1f4f33' : '#2f6b3a') : (k === 'spruce' ? '#2a5f3e' : '#3b7d45')));
+        const cc = i % 2 ? (k === 'spruce' ? '#1f4f33' : '#2f6b3a') : (k === 'spruce' ? '#2a5f3e' : '#3b7d45');
+        L.push(box(x, y, z, w, 1.4 * tall, w, tr.dark ? Genetics.mix(cc, '#000000', 0.25) : cc));
       }
       L.push(box(x, (2.4 + tiers * 1.5) * tall, z, 0.6, 1, 0.6, k === 'spruce' ? '#2a5f3e' : '#3b7d45'));
     } else if (k === 'amanita' || k === 'boletus' || k === 'glowshroom') {
@@ -466,6 +553,42 @@ const Voxel = (() => {
       if (k !== 'boletus') for (let i = 0; i < 7; i++) {
         const a = r() * Math.PI * 2, d = R * (0.2 + r() * 0.6);
         cap.push(box(x + Math.cos(a) * d, H + 0.85 + (d < R * 0.45 ? 0.6 : 0), z + Math.sin(a) * d, 0.5, 0.25, 0.5, k === 'glowshroom' ? '#ffffff' : '#ffffff'));
+      }
+    } else if (k === 'cactus') {
+      const H = 2 + R * 0.25;
+      L.push(box(x, H / 2, z, 0.9, H, 0.9, '#3a7d44'));
+      L.push(box(x + 0.9, H * 0.55, z, 0.9, 0.6, 0.6, '#3a7d44'));
+      L.push(box(x + 1.2, H * 0.75, z, 0.6, H * 0.45, 0.6, '#4a9152'));
+      if (r() < 0.6) { L.push(box(x - 0.9, H * 0.45, z, 0.9, 0.6, 0.6, '#3a7d44')); L.push(box(x - 1.2, H * 0.62, z, 0.6, H * 0.35, 0.6, '#4a9152')); }
+      if (r() < 0.4) L.push(box(x, H + 0.2, z, 0.5, 0.4, 0.5, '#ff6fae'));
+    } else if (k === 'mesa') {
+      const n = 3;
+      for (let i = 0; i < n; i++) L.push(box(x, 1.5 + i * 3, z, R * (1.4 - i * 0.35), 3, R * (1.2 - i * 0.3), ['#c0603a', '#d97b4a', '#b5522f'][i]));
+    } else if (k === 'drybush') {
+      for (let i = 0; i < 5; i++) L.push(box(x + (r() - 0.5) * 1.6, 0.4 + r() * 0.5, z + (r() - 0.5) * 1.6, 0.5, 0.6, 0.5, '#a0895a'));
+    } else if (k === 'palm') {
+      for (let i = 0; i < 7; i++) L.push(box(x + i * 0.18, 0.6 + i * 1.1, z, 0.7, 1.2, 0.7, '#8d6e4a'));
+      const tx = x + 1.2, ty = 8.2;
+      for (let a = 0; a < 6; a++) {
+        const ang = a / 6 * Math.PI * 2;
+        for (let d = 1; d <= 3; d++) L.push(box(tx + Math.cos(ang) * d * 1.1, ty - d * 0.35, z + Math.sin(ang) * d * 1.1, 1.2, 0.3, 1.2, d % 2 ? '#2b9348' : '#55a630'));
+      }
+      L.push(box(tx, ty - 0.5, z, 0.7, 0.7, 0.7, '#7f5539'));
+    } else if (k === 'snowspruce') {
+      L.push(box(x, 1.4, z, 0.8, 2.8, 0.8, '#5b3a22'));
+      for (let i = 0; i < 5; i++) {
+        const w = R * (1.7 - i * 0.28);
+        L.push(box(x, 2.6 + i * 1.6, z, w, 1.4, w, i % 2 ? '#1f4f33' : '#2a5f3e'));
+        L.push(box(x, 3.35 + i * 1.6, z, w * 0.8, 0.2, w * 0.8, '#ffffff'));
+      }
+      L.push(box(x, 10.8, z, 0.7, 1, 0.7, '#ffffff'));
+    } else if (k === 'snowrock') {
+      const n = 2 + Math.floor(r() * 3);
+      for (let i = 0; i < n; i++) {
+        const a = r() * 6.28, d = r() * R * 0.4, sw = R * (0.6 + r() * 0.5), hgt = R * (0.8 + r() * 1.2);
+        const px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+        L.push(box(px, hgt / 2, pz, sw, hgt, sw, ['#7f8c99', '#6b7785', '#95a2ad'][i % 3]));
+        L.push(box(px, hgt + 0.3, pz, sw * 0.85, 0.6, sw * 0.85, '#ffffff'));
       }
     } else if (k === 'rock') {
       const n = 3 + Math.floor(r() * 3);
@@ -489,6 +612,18 @@ const Voxel = (() => {
       L.push(box(cx, H / 2, cz, w * K + 0.2, H, d * K + 0.2, c));
       if (outer && H > 18) L.push(box(cx, H + 0.4, cz, w * K * 0.7, 0.8, d * K * 0.7, '#f1f3f5'));
     }
+  }
+
+  // причал с лодкой; dir — в какую сторону вода
+  function addPier(x, y, dir) {
+    const cx = x * K, cz = y * K, L = chunk(cx, cz);
+    L.push(box(cx, 0.4, cz, 24, 0.3, 5, '#8a5a32'));
+    for (let i = -2; i <= 2; i++) for (const s of [-1, 1]) L.push(box(cx + i * 5, 0.2, cz + s * 2.4, 0.5, 1.4, 0.5, '#5e3b1d'));
+    const bx = cx + dir * 14, bz = cz + 5;
+    L.push(box(bx, 0.5, bz, 7, 1, 3, '#a0522d'));
+    L.push(box(bx, 1.1, bz, 7.4, 0.3, 3.4, '#8a4520'));
+    L.push(box(bx, 3.2, bz, 0.3, 5, 0.3, '#5e3b1d'));
+    L.push(box(bx + dir * 1.4, 3.4, bz, 2.4, 3.6, 0.1, '#f8f4ea'));
   }
 
   function addHouse(hh) {
@@ -583,6 +718,29 @@ const Voxel = (() => {
       chunk(x * K, y * K).push(box(x * K, 1.2, y * K, 0.25, 2.4, 0.25, '#5b3a22'));
       chunk(x * K, y * K, true).push(box(x * K, 2.6, y * K, 0.5, 0.6, 0.5, '#ffb84d'));
     }
+    // острова
+    for (const I of World.ISLANDS) {
+      const st = I.stable, cx = (st.x + st.w / 2) * K, cz = (st.y + st.h / 2) * K, L = chunk(cx, cz);
+      L.push(box(cx, 0.05, cz, st.w * K, 0.1, st.h * K, '#e4c46c'));
+      L.push(box(cx, 1.6, st.y * K + 0.5, st.w * K, 3.2, 1, '#8a5a32'));
+      L.push(box(st.x * K + 0.5, 1.6, cz, 1, 3.2, st.h * K, '#8a5a32'));
+      L.push(box((st.x + st.w) * K - 0.5, 1.6, cz, 1, 3.2, st.h * K, '#8a5a32'));
+      for (let k = 1; k < 5; k++) L.push(box((st.x + k * st.w / 5) * K, 0.9, cz, 0.3, 1.8, st.h * K * 0.8, '#6b4423'));
+      for (let k = 0; k < 5; k++) L.push(box((st.x + 34 + k * 68) * K, 0.4, (st.y + 20) * K, 2.2, 0.6, 1, '#9b7a3a'));
+      fenceBoxes(L, I.pasture, { side: 'bottom', a: I.gate.x1, b: I.gate.x2 }, '#8a5a32', '#5e3b1d', 1.5);
+      const pc = chunk(I.pen.x * K, I.pen.y * K);
+      for (let k = 0; k < 24; k++) {
+        const a = k / 24 * Math.PI * 2, a2 = (k + 1) / 24 * Math.PI * 2;
+        if (Math.abs(a - Math.PI * 1.5) < 0.3) continue;
+        const px = (I.pen.x + Math.cos(a) * I.pen.r) * K, pz = (I.pen.y + Math.sin(a) * I.pen.r) * K;
+        pc.push(box(px, 0.7, pz, 0.35, 1.4, 0.35, '#ffffff'));
+        if (Math.abs(a2 - Math.PI * 1.5) < 0.3) continue;
+        const qx = (I.pen.x + Math.cos(a2) * I.pen.r) * K, qz = (I.pen.y + Math.sin(a2) * I.pen.r) * K;
+        for (const hy of [0.6, 1.15]) pc.push(box((px + qx) / 2, hy, (pz + qz) / 2, Math.hypot(qx - px, qz - pz), 0.18, 0.18, '#f1f3f5', { ry: -Math.atan2(qz - pz, qx - px) }));
+      }
+      addPier(I.pier.x - 110, I.pier.y, -1);
+    }
+    addPier(World.PIER.x + 110, World.PIER.y, 1);
     // деревня
     for (const hh of World.HOUSES) addHouse(hh);
     const Wl = World.WELL, wl = chunk(Wl.x * K, Wl.y * K);
@@ -1073,6 +1231,7 @@ const Voxel = (() => {
     scene.add(sun.target);
     mat = new T.MeshLambertMaterial({ vertexColors: true });
     glowMat = new T.MeshBasicMaterial({ vertexColors: true });
+    glassMat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, side: T.DoubleSide, depthWrite: false });
     ghostMat = new T.MeshBasicMaterial({ color: '#dbe4ff', transparent: true, opacity: 0.38, depthWrite: false });
 
     const ground = new T.Mesh(new T.PlaneGeometry(World.W * K, World.H * K), new T.MeshLambertMaterial({ map: groundTexture() }));
@@ -1080,7 +1239,7 @@ const Voxel = (() => {
     ground.position.set(World.W * K / 2, 0, World.H * K / 2);
     ground.receiveShadow = true;
     scene.add(ground);
-    const outside = new T.Mesh(new T.PlaneGeometry(6000, 6000), new T.MeshLambertMaterial({ color: '#7fae55' }));
+    const outside = new T.Mesh(new T.PlaneGeometry(8000, 8000), new T.MeshLambertMaterial({ color: '#2f7fb8' }));
     outside.rotation.x = -Math.PI / 2;
     outside.position.set(World.W * K / 2, -0.05, World.H * K / 2);
     scene.add(outside);
@@ -1128,14 +1287,18 @@ const Voxel = (() => {
     e.tail.rotation.y = Math.sin(o.t * 2.2 + (h.seed % 7)) * 0.35;
     e.tail.rotation.z = move * 0.5 + fly * 0.4;
     for (const w of e.wings) {
-      const flap = fly ? Math.sin(o.t * 9) * 0.7 : move > 0.6 ? Math.sin(o.t * 6) * 0.3 : -0.9;
+      const f = w.f;
+      const flap = fly ? Math.sin(o.t * f.speed) * f.amp : move > 0.6 ? Math.sin(o.t * f.speed * 0.7) * f.amp * 0.4 : f.rest;
       w.pivot.rotation.x = w.s * (flap + (fly ? 0.1 : 0));
     }
     if (o.rider) {
-      const R = o.rider, k = `${R.pad}|${R.helmet}|${R.shirt}`;
+      const R = o.rider, k = `${R.pad}|${R.helmet}|${R.shirt}|${R.saddleStyle}|${R.saddleColor}|${R.bridleStyle}|${R.bridleColor}`;
       if (e.riderKey !== k) {
-        if (e.rider) { e.rider.geometry.dispose(); e.group.remove(e.rider); }
-        e.rider = meshOf(voxelGeometry(riderCells(R), V, 3));
+        if (e.rider) { e.rider.traverse(n => n.geometry && n.geometry.dispose()); e.group.remove(e.rider); }
+        const rc = riderCells(R);
+        e.rider = new T.Group();
+        e.rider.add(meshOf(voxelGeometry(rc.cells, V, 3)));
+        if (rc.glow.size) e.rider.add(glowMesh(voxelGeometry(rc.glow, V, 4)));
         e.group.add(e.rider);
         e.riderKey = k;
       }

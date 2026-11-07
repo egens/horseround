@@ -176,13 +176,20 @@ const UI = (() => {
     open(() => {
       const S = G.S;
       let html = canAct ? '' : '<p class="note">Ты далеко от конюшни — можно только посмотреть. Подойди ближе, чтобы ухаживать за лошадьми.</p>';
-      html += '<div class="stalls">';
-      for (let i = 0; i < G.maxStalls(); i++) {
+      let total = 0;
+      for (const grp of G.stallGroups()) {
+      total += grp.list.length;
+      const busy = grp.list.filter(i => G.horseInStall(i)).length;
+      // пустые островные конюшни сворачиваем, чтобы список не был длинным
+      if (grp.title !== 'Ферма' && !busy) { html += `<h4>${esc(grp.title)}: 5 свободных денников</h4>`; continue; }
+      html += `<h4>${esc(grp.title)}</h4><div class="stalls">`;
+      for (const i of grp.list) {
+        const num = grp.title === 'Ферма' ? i + 1 : (i - 1000) % 5 + 1;
         const h = G.horseInStall(i);
-        if (!h) { html += `<div class="stall empty"><div class="num">№${i + 1}</div><div>свободный денник</div></div>`; continue; }
+        if (!h) { html += `<div class="stall empty"><div class="num">№${num}</div><div>свободный денник</div></div>`; continue; }
         const ph = Horses.pheno(h);
         html += `<button class="stall" data-act="horse" data-id="${h.id}" data-can="${canAct ? 1 : 0}">
-          <div class="num">№${i + 1}</div>
+          <div class="num">№${num}</div>
           <canvas width="150" height="78" data-hid="${h.id}"></canvas>
           <div class="nm">${sexIcon(h)} ${esc(h.name)}</div>
           <div class="sub">${esc(ph.name)}</div>
@@ -192,7 +199,8 @@ const UI = (() => {
         </button>`;
       }
       html += '</div>';
-      return { title: `Конюшня — ${S.horses.length} из ${G.maxStalls()} денников`, html };
+      }
+      return { title: `Конюшни — ${S.horses.length} из ${total} денников`, html };
     });
   }
 
@@ -218,7 +226,7 @@ const UI = (() => {
             <tr><td>Нрав</td><td>${h.temper < 0.35 ? 'спокойный 😌' : h.temper < 0.6 ? 'обычный 🙂' : 'горячий 🔥'}</td></tr>
             ${h.magic ? `<tr><td>Волшебство</td><td><b>${Horses.magicText(h)}</b></td></tr>` : ''}
             <tr><td>Грива</td><td>${Items.MANE_STYLES[h.maneStyle || 'normal'].name}${h.maneDye ? ', ' + Items.DYES[h.maneDye].name.toLowerCase() : ''}</td></tr>
-            <tr><td>Денник</td><td>№${h.stall + 1}</td></tr>
+            <tr><td>Денник</td><td>${esc(G.stallLabel(h.stall))}</td></tr>
             <tr><td>Цена</td><td>${G.sellPrice(h)} 🪙</td></tr>
           </table>
           <div class="badges">${statusBadges(h)}</div>
@@ -304,7 +312,7 @@ const UI = (() => {
           <button class="btn small" data-act="buyitem" data-arg="${c.seed}" data-n="1" data-p="${c.seedPrice}">+1</button>
           <button class="btn small" data-act="buyitem" data-arg="${c.seed}" data-n="5" data-p="${c.seedPrice}">+5</button></div>`;
       }
-      html += '</div><h4>Краски для гривы</h4><div class="shop">' + dyeShop(1.2) + '</div><h4>Амуниция</h4><div class="shop">';
+      html += '</div><h4>Краски для гривы</h4><div class="shop">' + dyeShop(1.2) + '</div>' + tackStyles() + '<h4>Амуниция</h4><div class="shop">';
       for (const [k, t] of Object.entries(G.TACK)) {
         const own = S.tack[k];
         const sw = own && t.colors
@@ -316,6 +324,42 @@ const UI = (() => {
       }
       html += '</div>';
       return { title: '🛒 Повозка «Корм и амуниция»', html };
+    });
+  }
+
+  // сёдла и уздечки разных стилей, цвет кожи
+  function tackStyles() {
+    const S = G.S, t = S.tack;
+    let html = '';
+    for (const [kind, title] of [['saddle', 'Сёдла'], ['bridle', 'Уздечки']]) {
+      html += `<h4>${title}</h4>`;
+      if (!t[kind]) { html += `<p class="small">Сначала купи обычн${kind === 'saddle' ? 'ое седло' : 'ую уздечку'} в разделе «Амуниция» ниже.</p>`; continue; }
+      html += '<div class="shop">';
+      for (const [k, st] of Object.entries(Items.TACK_STYLES)) {
+        const own = t[kind + 'Styles'][k], on = t[kind + 'Style'] === k;
+        html += `<div class="item ${on ? 'on' : ''}"><div class="ic">${st.icon}</div><div class="t"><b>${st.name}</b><small>${st.desc}</small></div>
+          <button class="btn small ${own ? '' : 'green'} ${on ? 'active' : ''}" data-act="tackstyle" data-arg="${kind}" data-s="${k}">${on ? 'надето ✔' : own ? 'Надеть' : st[kind] + ' 🪙'}</button></div>`;
+      }
+      html += `</div><div class="small">Цвет ${kind === 'saddle' ? 'седла' : 'уздечки'}:</div><div class="swatches">${Items.LEATHER.map(c => `<button class="sw ${t[kind + 'Color'] === c ? 'on' : ''}" style="background:${c}" data-act="tackcolor" data-arg="${kind}" data-c="${c}"></button>`).join('')}</div>`;
+    }
+    return html;
+  }
+
+  function openBoat() {
+    open(() => {
+      const p = G.S.player;
+      const here = World.regionAt(p.x, p.y);
+      const dests = [{ id: 'main', name: 'Большая земля (пристань у Грибного королевства)' }].concat(World.ISLANDS.map(I => ({ id: I.id, name: I.name })));
+      const t = Math.ceil(G.islandTimeLeft() / 60);
+      let html = `<p>Куда плывём? На каждом острове есть конюшня на 5 денников, пастбище, круглый манеж и 5 диких лошадей. Лошади на островах меняются каждые 5 минут (следующая смена ≈ через ${t} мин).</p><div class="train">`;
+      for (const d of dests) {
+        if (d.id === here || (d.id === 'main' && !here.startsWith('i'))) continue;
+        const I = World.ISLANDS.find(q => q.id === d.id);
+        const kinds = I ? [...new Set(I.breeds.map(b => Genetics.BREEDS[b].name))].join(', ') : 'ферма, поля, лес, горы';
+        html += `<button class="card" data-act="sail" data-arg="${d.id}"><b>⛵ ${esc(d.name)}</b><span>${esc(kinds)}</span></button>`;
+      }
+      html += '</div><p class="small">Лошадь под седлом и пойманная на верёвке плывут вместе с тобой.</p>';
+      return { title: '⛵ Лодка', html };
     });
   }
 
@@ -630,6 +674,9 @@ const UI = (() => {
           <li>💬 <b>Жители</b> дают задания и награды. Значок ❗ — есть новое задание, ❓ — можно сдать.</li>
           <li>🔨 <b>Стройка и огород:</b> строй грядки, клумбы, фонари, яблоньки и даже маленькую конюшню. Сажай морковь, овёс, тыквы и подсолнухи.</li>
           <li>📡 <b>Металлоискатель:</b> пищит всё чаще рядом с кладом — копай и находи подковы, монеты, краски для гривы и карту сокровищ.</li>
+          <li>🏝️ <b>Острова в море</b> на востоке: плыви на лодке с пристани. На каждом — конюшня, пастбище, манеж и 5 диких лошадей с крыльями бабочки, дракона, ворона, стрекозы или пчёлки. Каждые 5 минут лошади меняются!</li>
+          <li>🏜️ <b>Пустыня, дремучий лес и тундра</b> со снежными скалами — на юге. В пустыне живут ахалтекинцы и арабы, в тундре — мохнатые якутские лошади.</li>
+          <li>💎 <b>Сёдла и уздечки:</b> классические, кристальные, цветочные и ракушечные, любого цвета.</li>
           <li>💇 <b>Грива:</b> косички, бантики, ирокез и краски — розовая, голубая, радужная…</li>
           <li>🌙 <b>День и ночь</b> сменяют друг друга (сутки — 8 минут). Ночью табун спит, и подкрасться к лошадям легче.</li>
         </ul>
@@ -693,6 +740,9 @@ const UI = (() => {
       case 'jump': G.act.startJumping(+arg); break;
       case 'race-go': Events.startRace(); break;
       case 'race-new': Events.prepareRace(); render(); break;
+      case 'tackstyle': G.act.buyStyle(arg, b.dataset.s); render(); break;
+      case 'tackcolor': G.act.setTackColor(arg, b.dataset.c); render(); break;
+      case 'sail': G.act.sail(arg); break;
       case 'buyitem': G.act.buyItem(arg, +b.dataset.n, +b.dataset.p); render(); break;
       case 'sellitem': G.act.sellItem(arg, +b.dataset.n); render(); break;
       case 'mane': openMane(id); break;
@@ -723,6 +773,6 @@ const UI = (() => {
   return {
     init, updateHud, toast, closeModal, isModalOpen, openStable, openShop, openSell, openInventory,
     openHelp, openTraining, openJumping, jumpResult, openRace, raceResult, result,
-    openQuests, openNpc, openBoard, openBuild, openBed, openMane, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
+    openQuests, openNpc, openBoard, openBuild, openBed, openMane, openBoat, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
   };
 })();

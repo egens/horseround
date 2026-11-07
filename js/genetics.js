@@ -81,7 +81,7 @@ const Genetics = (() => {
     },
     // волшебные породы живут только в Грибном королевстве, скелеты — в пещере
     pegasus: {
-      name: 'Пегас', weight: 0, home: 'magic', hw: 1, size: 1.0, temper: 0.75, magic: { wings: true },
+      name: 'Пегас', weight: 0, home: 'magic', hw: 1, size: 1.0, temper: 0.75, magic: { wings: 'pegasus' },
       freq: { E: 0.5, A: 0.5, Cr: 0.2, G: 0.55 },
       stats: { speed: [80, 98], jump: [70, 95], dressage: [60, 85], stamina: [75, 95] },
     },
@@ -104,6 +104,38 @@ const Genetics = (() => {
       name: 'Лошадь-скелет', weight: 0, home: 'cave', hw: 1, size: 1.0, temper: 0.55, magic: { skeleton: true },
       freq: {},
       stats: { speed: [65, 88], jump: [60, 85], dressage: [45, 70], stamina: [90, 100] },
+    },
+    // лошади с разными крыльями живут на островах
+    butterflyhorse: {
+      name: 'Лошадь-бабочка', weight: 0, home: 'island', hw: 1, size: 0.9, temper: 0.55, magic: { wings: 'butterfly' },
+      freq: { E: 0.4, A: 0.5, Cr: 0.3, G: 0.3, TO: 0.25 },
+      stats: { speed: [65, 88], jump: [60, 85], dressage: [75, 95], stamina: [60, 85] },
+    },
+    dragonhorse: {
+      name: 'Драконья лошадь', weight: 0, home: 'island', hw: 1, size: 1.1, temper: 0.85, magic: { wings: 'dragon' },
+      freq: { E: 0.8, A: 0.3, Z: 0.3 },
+      stats: { speed: [80, 99], jump: [70, 92], dressage: [50, 75], stamina: [85, 100] },
+    },
+    ravenhorse: {
+      name: 'Лошадь с крыльями ворона', weight: 0, home: 'island', hw: 1, size: 1.0, temper: 0.7, magic: { wings: 'raven' },
+      freq: { E: 0.7, A: 0.5, G: 0.25, Rn: 0.2 },
+      stats: { speed: [78, 96], jump: [70, 90], dressage: [60, 85], stamina: [75, 95] },
+    },
+    dragonflyhorse: {
+      name: 'Лошадь-стрекоза', weight: 0, home: 'island', hw: 1, size: 0.88, temper: 0.75, magic: { wings: 'dragonfly' },
+      freq: { E: 0.5, A: 0.4, D: 0.4, Cr: 0.15, Z: 0.2 },
+      stats: { speed: [85, 99], jump: [60, 85], dressage: [55, 80], stamina: [60, 85] },
+    },
+    beehorse: {
+      name: 'Лошадь-пчёлка', weight: 0, home: 'island', hw: 1, size: 0.75, temper: 0.4, magic: { wings: 'bee' },
+      freq: { E: 0.25, A: 0.6, Cr: 0.45, F: 0.5 },
+      stats: { speed: [55, 78], jump: [55, 80], dressage: [60, 85], stamina: [70, 92] },
+    },
+    // настоящая северная порода: мохнатая, выносливая, часто саврасая и серая
+    yakut: {
+      name: 'Якутская', weight: 0, home: 'tundra', hw: 1, size: 0.86, temper: 0.3, longMane: true, feather: true,
+      freq: { E: 0.75, A: 0.6, D: 0.4, G: 0.4, Cr: 0.05 },
+      stats: { speed: [45, 65], jump: [40, 60], dressage: [40, 60], stamina: [90, 100] },
     },
     mix: {
       name: 'Помесь', weight: 0, size: 1, temper: 0.5,
