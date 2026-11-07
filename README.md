@@ -4,7 +4,7 @@
 
 Объёмный воксельный мир на Three.js (библиотека лежит в репозитории, интернет не нужен).
 
-Игра публикуется на GitHub Pages: https://egens.github.io/horseround/
+Игра публикуется на GitHub Pages из ветки `main`: https://egens.github.io/horseround/
 
 ## Что есть в игре
 
