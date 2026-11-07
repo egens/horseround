@@ -12,14 +12,14 @@ const Events = (() => {
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
   let nextT = rand(35, 60);
-  let rain = null, wet = 0, rainbowT = 0;
+  let rain = null, wet = 0, rainbowT = 0, puddle = 0;
   let bunnies = [];
   let shoe = null;
   let fairT = 0, invite = 0;
   let race = null, pending = null, raceId = 0;
   let drops = [];
 
-  const START = { x: 1840, y: 560 }; // вокруг старта деревьев нет (см. world.js)
+  const START = World.START; // вокруг старта деревьев нет (см. world.js)
   const RIDERS = ['Маша', 'Лиза', 'Артём', 'Даня', 'Соня', 'Вика', 'Тимур', 'Полина', 'Ника', 'Егор', 'Алиса', 'Миша'];
   const SHIRTS = ['#4dabf7', '#ffa94d', '#69db7c', '#9775fa', '#ffd43b', '#f06595', '#20c997', '#e8590c'];
   const HELMETS = ['#212529', '#1c7ed6', '#c92a2a', '#2b8a3e', '#5f3dc4', '#e67700'];
@@ -29,7 +29,7 @@ const Events = (() => {
   /* ================= расписание событий ================= */
   function canRace() {
     const S = G.S;
-    return S.tack.saddle && S.tack.bridle && S.horses.some(h => Horses.isAdult(h));
+    return S.tack.saddle && S.tack.bridle && S.horses.some(h => Horses.canRide(h));
   }
 
   function fireRandom() {
@@ -47,7 +47,7 @@ const Events = (() => {
   function start(kind) {
     if (kind === 'rain') {
       rain = { t: rand(45, 90) };
-      UI.toast('🌧️ Пошёл дождь! У лошадей пачкаются ноги — у всех, кроме тех, что стоят в конюшне.');
+      UI.toast('🌧️ Пошёл дождь! Появляются лужи, лошади мокнут и пачкают ноги — все, кроме тех, что в конюшне.');
     } else if (kind === 'bunnies') {
       spawnBunnies(3 + Math.floor(Math.random() * 3));
       UI.toast('🐰 На лугу появились зайчики! Поймай зайчика — он принесёт подарок.');
@@ -56,14 +56,14 @@ const Events = (() => {
       UI.toast('🏁 Приглашение на скачки! Приз двойной — подъезжай к стартовому столбу у поля.', 'good');
       Sound.fanfare();
     } else if (kind === 'shoe') {
-      shoe = randomGrass(World.FIELD, 120) || { x: 1500, y: 900 };
+      shoe = randomGrass(World.FIELD, 120) || { x: World.FIELD.x + 300, y: World.FIELD.y + 800 };
       shoe.t = 120;
       UI.toast('✨ Где-то в поле блестит подкова на счастье! Посмотри на миникарте.');
     } else if (kind === 'fair') {
       fairT = 90;
       UI.toast('🎪 Ярмарка! Полторы минуты торговец платит за лошадей на 30% больше.', 'good');
     } else if (kind === 'lost') {
-      const h = G.makeWild(1700, rand(700, 1000));
+      const h = G.makeWild(World.FIELD.x - 60, World.FIELD.y + rand(600, 900));
       h.temper = 0.05;
       h.lost = true;
       h.slot = { x: rand(-150, 150), y: rand(-110, 110) };
@@ -84,7 +84,7 @@ const Events = (() => {
   /* ================= зайчики ================= */
   const BUNNY_COLORS = [['#b08d6a', '#e9dcc8'], ['#8a7f75', '#d9d2ca'], ['#f1ede6', '#ffffff'], ['#5e4b3c', '#cbb9a4']];
   function spawnBunnies(n) {
-    const areas = [World.FIELD, { x: 1000, y: 1150, w: 650, h: 1150 }, World.LAKELAND, World.FOREST[0], World.FARMLAND];
+    const areas = [World.FIELD, { x: World.OX + 1000, y: World.OY + 1150, w: 650, h: 1150 }, World.LAKELAND, World.FOREST[0], World.FARMLAND, World.STEPPE];
     // домики для зайчиков рядом с фермой
     for (const hh of Farm.bunnyHomes()) areas.push({ x: hh.x - 250, y: hh.y - 250, w: 500, h: 500 }, { x: hh.x - 250, y: hh.y - 250, w: 500, h: 500 });
     for (let i = 0; i < n; i++) {
@@ -359,13 +359,14 @@ const Events = (() => {
     if (rain) {
       rain.t -= dt;
       wet = Math.min(1, wet + dt * 0.25);
+      puddle = Math.min(1, puddle + dt * 0.06);                 // лужи растут во время дождя
       for (const h of G.S.horses) if (h.state === 'paddock') { h.clean = Math.max(0, h.clean - dt * 0.35); h.mood = Math.max(0, h.mood - dt * 0.04); }
       if (rain.t <= 0) {
         rain = null;
-        if (G.daylight() > 0.5) { rainbowT = 30; UI.toast('🌈 Дождь закончился — смотри, радуга!', 'good'); }
+        if (G.daylight() > 0.5) { rainbowT = 60; UI.toast('🌈 Дождь закончился — смотри, радуга! И в лужах она отражается', 'good'); }
         else UI.toast('Дождь закончился');
       }
-    } else wet = Math.max(0, wet - dt * 0.2);
+    } else { wet = Math.max(0, wet - dt * 0.2); puddle = Math.max(0, puddle - dt * 0.005); }   // и медленно высыхают
     rainbowT = Math.max(0, rainbowT - dt);
     fairT = Math.max(0, fairT - dt);
     if (fairT > 0 && fairT - dt <= 0) UI.toast('Ярмарка закончилась');
@@ -438,11 +439,23 @@ const Events = (() => {
       }
       return;
     }
-    ctx.fillStyle = `rgba(60,75,95,${0.22 * wet})`;
+    const magic = reg === 'mushroom';                                // в волшебном биоме дождь радужный
+    ctx.fillStyle = magic ? `rgba(120,80,160,${0.16 * wet})` : `rgba(60,75,95,${0.22 * wet})`;
     ctx.fillRect(0, 0, w, h);
     const n = Math.floor(260 * wet * (w * h) / (1280 * 800));
     while (drops.length < n) drops.push({ x: Math.random() * w, y: Math.random() * h, s: 0.7 + Math.random() * 0.6 });
     drops.length = Math.min(drops.length, n);
+    if (magic) {
+      const RB = ['#ff6b6b', '#ff922b', '#ffd43b', '#51cf66', '#4dabf7', '#9775fa', '#f783ac'];
+      ctx.lineWidth = 2 * k;
+      drops.forEach((d, i) => {
+        d.y += 22 * d.s * k; d.x -= 4 * d.s * k;
+        if (d.y > h) { d.y = -20; d.x = Math.random() * w * 1.1; }
+        ctx.strokeStyle = RB[i % RB.length];
+        ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x + 4 * d.s * k, d.y - 18 * d.s * k); ctx.stroke();
+      });
+      return;
+    }
     ctx.strokeStyle = 'rgba(200,215,235,0.55)';
     ctx.lineWidth = 1.2 * k;
     ctx.beginPath();
@@ -512,7 +525,8 @@ const Events = (() => {
   return {
     init, update, prompt, hud, startRace, cancelRace, prepareRace, rivals, gates, findHorse,
     drawScreen, drawMinimap, drawPreview,
-    weather: () => wet, raining: () => !!rain, bunnies: () => bunnies, shoe: () => shoe, START,
+    weather: () => wet, raining: () => !!rain, puddles: () => puddle, rainbow: () => rainbowT,
+    magicRain: () => !!rain && World.regionAt(G.S.player.x, G.S.player.y) === 'mushroom', bunnies: () => bunnies, shoe: () => shoe, START,
     busy: () => !!race, priceMul: () => (fairT > 0 ? 1.3 : 1), fair: () => fairT > 0,
     get pending() { return pending; },
     nextGate() { return race && race.state !== 'done' ? race.track.gates[Math.min(race.i, race.track.gates.length - 1)] : null; },

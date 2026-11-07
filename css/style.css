@@ -172,3 +172,22 @@ body.modal-open #toasts { top: auto; bottom: 16px; }
 .npc .face { font-size: 54px; }
 .npc .speech { background: #fff; border: 2px solid #d9c3a0; border-radius: 14px; padding: 10px 14px; font-size: 16px; flex: 1; min-width: 0; }
 .dye { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #8a7a66; vertical-align: middle; }
+
+/* мини-игры ухода */
+#care { position: fixed; inset: 0; background: rgba(30, 20, 10, 0.5); display: flex; align-items: center; justify-content: center; z-index: 45; padding: 10px; }
+.care-box { background: var(--cream); border: 3px solid var(--wood); border-radius: 16px; padding: 12px 14px; width: min(600px, 96vw); box-shadow: var(--shadow); }
+#care-canvas { width: 100%; height: auto; aspect-ratio: 7 / 4; background: #fff3dc; border: 2px solid var(--wood); border-radius: 10px; touch-action: none; display: block; }
+#care-hint { margin: 4px 0 8px; }
+.care-bar { height: 12px; background: #e9dccb; border-radius: 6px; overflow: hidden; margin: 8px 0; }
+#care-progress { height: 100%; width: 0; background: var(--green); transition: width .15s; }
+.row.center { justify-content: center; }
+/* заставка рождения */
+#birth { position: fixed; inset: 0; background: rgba(30, 20, 10, 0.55); display: flex; align-items: center; justify-content: center; z-index: 46; padding: 10px; }
+.birth-box { background: var(--cream); border: 3px solid #f783ac; border-radius: 16px; padding: 12px 14px; width: min(640px, 96vw); text-align: center; box-shadow: var(--shadow); }
+.birth-box h2 { margin: 0 0 8px; }
+#birth-canvas { width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; display: block; background: #ffe8cc; }
+#birth-text { font-size: 17px; min-height: 2.6em; }
+#walk { display: flex; gap: 6px; align-items: center; font-weight: bold; flex-wrap: wrap; }
+.tricks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.players td, .players th { padding: 4px 8px; text-align: left; }
+.players tr.me { background: #fff3bf; }

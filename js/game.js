@@ -12,6 +12,7 @@ const Game = (() => {
     carrot: { name: 'Морковка', icon: '🥕', price: 3, hunger: 6, energy: 2, mood: 10, bait: true },
     apple: { name: 'Яблоко', icon: '🍎', price: 3, hunger: 6, energy: 2, mood: 10, bait: true },
     sugar: { name: 'Сахар', icon: '🍬', price: 2, hunger: 2, energy: 4, mood: 15 },
+    milk: { name: 'Молоко', icon: '🍼', price: 4, hunger: 30, energy: 10, mood: 15, foalOnly: true },
   };
   const COLORS = ['#c0392b', '#2e86de', '#e84393', '#8e44ad', '#27ae60', '#f39c12', '#222a3a', '#ffffff'];
   const TACK = {
@@ -95,13 +96,13 @@ const Game = (() => {
         bridleStyles: { classic: true }, bridleStyle: 'classic', bridleColor: '#2b1a10',
       },
       horses: [],
-      player: { x: 960, y: 470, angle: 0, gait: 0, mountId: null, shirt: '#e05a8a' },
+      player: { x: World.OX + 960, y: World.OY + 470, angle: 0, gait: 0, mountId: null, shirt: '#e05a8a' },
       stats: { caught: 0, foals: 0, sold: 0, gold: 0, silver: 0, bronze: 0, bunnies: 0, races: 0, wins: 0 },
       nextId: 1,
       seenHelp: false,
       clock: 8 * 60,   // минуты от полуночи
       builds: [], flags: {}, quests: {}, board: null, buildId: 0, bigTreasure: null,
-      market: null,
+      market: null, worldV: 2,
     };
   }
 
@@ -133,6 +134,13 @@ const Game = (() => {
     // старые огненные и ледяные лошадки получают новый окрас
     for (const h of s.horses) if ((h.breed === 'firehorse' || h.breed === 'icehorse') && h.magic && !h.magic.elem) h.magic.elem = h.breed === 'firehorse' ? 'fire' : 'ice';
     s.market = data.market || null;
+    // старые сохранения: мир расширился, город теперь в середине — сдвигаем всё, что стоит на карте
+    if ((data.worldV || 1) < 2) {
+      const mv = o => { if (o && typeof o.x === 'number') { o.x += World.OX; o.y += World.OY; } };
+      mv(s.player); s.builds.forEach(mv); mv(s.bigTreasure);
+      for (const h of s.horses) { mv(h); h.wander = null; }
+      s.worldV = 2;
+    }
     Horses.nextId = Math.max(s.nextId || 1, ...s.horses.map(h => h.id + 1), ...((s.market && s.market.stock) || []).map(h => h.id + 1), 1);
     return s;
   }
@@ -210,11 +218,21 @@ const Game = (() => {
     // у портала в глубине пещеры — ещё скелеты
     portal: { area: { x: World.PORTAL.x - 450, y: World.PORTAL.y - 380, w: 800, h: 700 }, count: 3, sleeps: false, name: 'у портала' },
     // в лесу у Лесного озера — лиственные и сырые лошадки
-    forest: { area: { x: 1900, y: 4100, w: 2300, h: 1700 }, count: 6, sleeps: true, name: 'в лесу' },
+    forest: { area: { x: World.OX + 1900, y: World.OY + 4100, w: 2300, h: 1700 }, count: 6, sleeps: true, name: 'в лесу' },
     cave: { area: { x: World.CAVE.x + 100, y: World.CAVE.y + 100, w: World.CAVE.w - 200, h: World.CAVE.h - 200 }, count: 4, sleeps: false, name: 'в пещере' },
     desert: { area: { x: World.DESERT.x + 200, y: World.DESERT.y + 200, w: World.DESERT.w - 400, h: World.DESERT.h - 400 }, count: 6, sleeps: true, name: 'в пустыне' },
     tundra: { area: { x: World.TUNDRA.x + 200, y: World.TUNDRA.y + 200, w: World.TUNDRA.w - 400, h: World.TUNDRA.h - 400 }, count: 6, sleeps: true, name: 'в тундре' },
+    // новые биомы вокруг города
+    steppe: { area: { x: World.STEPPE.x + 300, y: World.STEPPE.y + 300, w: World.STEPPE.w - 600, h: World.STEPPE.h - 600 }, count: 7, sleeps: true, name: 'в степи' },
+    foxwood: { area: { x: World.FOXWOOD.x + 300, y: World.FOXWOOD.y + 300, w: World.FOXWOOD.w - 600, h: World.FOXWOOD.h - 600 }, count: 6, sleeps: true, name: 'в Лисьем лесу' },
+    deepforest: { area: { x: World.DEEPFOREST.x + 250, y: World.DEEPFOREST.y + 250, w: World.DEEPFOREST.w - 500, h: World.DEEPFOREST.h - 500 }, count: 5, sleeps: true, name: 'в Дремучем лесу' },
+    dragonrock: { area: { x: World.DRAGONROCK.x + 300, y: World.DRAGONROCK.y + 300, w: World.DRAGONROCK.w - 600, h: World.DRAGONROCK.h - 600 }, count: 5, sleeps: false, name: 'на Драконьих скалах' },
   };
+  // в каждой маленькой пещерке — по две чёрные лошади со светящимися узорами
+  for (const g of World.GROTTOS) HERDS[g.id] = { area: { x: g.x - g.r * 0.55, y: g.y - g.r * 0.55, w: g.r * 1.1, h: g.r * 1.1 }, count: 2, sleeps: false, name: 'в пещерке', grotto: true };
+  // особые табуны: лошади из поезда и праздничные лошади (их выпускают train.js и holidays.js)
+  HERDS.train = { area: { x: World.STATION.x - 900, y: World.RAIL.y - 1100, w: 2300, h: 1000 }, count: 0, sleeps: false, name: 'у станции', special: true };
+  HERDS.holiday = { area: { x: World.FIELD.x + 200, y: World.FIELD.y + 200, w: World.FIELD.w - 400, h: World.FIELD.h - 400 }, count: 0, sleeps: false, name: 'на празднике', special: true };
   // на каждом острове — 5 диких лошадей, раз в 5 минут они меняются
   for (const I of World.ISLANDS) HERDS[I.id] = { area: I.area, count: 5, sleeps: true, name: `на острове «${I.name}»`, island: I };
   // небесные острова: дикие крылатые и облачные лошадки
@@ -222,7 +240,13 @@ const Game = (() => {
   const ISLAND_REFRESH = 300;
   let islandT = ISLAND_REFRESH;
   const HOME_BREEDS = {
-    desert: ['akhal', 'akhal', 'arab', 'arab', 'sandhorse', 'sandhorse'],
+    desert: ['akhal', 'arab', 'sandhorse', 'zebra', 'zebra', 'zebra', 'zebra'],
+    steppe: ['przewalski', 'przewalski', 'przewalski', 'przewalski', 'fedorov', 'haflinger', 'orlov'],
+    foxwood: ['foxhorse', 'foxhorse', 'foxhorse', 'foxhorse', 'trakehner', 'fedorov'],
+    deepforest: ['foxhorse', 'foxhorse', 'foxhorse', 'friesian', 'damphorse'],
+    dragonrock: ['scalehorse', 'scalehorse', 'scalehorse', 'scalehorse', 'dragonhorse'],
+    train: ['arab', 'andalusian', 'appaloosa', 'friesian', 'akhal', 'fedorov', 'zebra', 'unicorn', 'pegasus', 'rainbowhorse', 'crystalhorse', 'foxhorse'],
+    holiday: ['holidayhorse'],
     tundra: ['yakut', 'yakut', 'yakut', 'yakut', 'fjord', 'icehorse'],
     portal: ['skeleton', 'skeleton', 'skeleton', 'stonehorse'],
     forest: ['leafhorse', 'leafhorse', 'damphorse', 'damphorse', 'trakehner', 'orlov'],
@@ -234,6 +258,7 @@ const Game = (() => {
 
   function randomFieldPoint(margin = 150, area = World.FIELD) {
     const F = area;
+    margin = Math.min(margin, F.w * 0.3, F.h * 0.3);
     for (let i = 0; i < 60; i++) {
       const x = rand(F.x + margin, F.x + F.w - margin), y = rand(F.y + margin, F.y + F.h - margin);
       if (!World.inPond(x, y, 150) && !World.blocked(x, y, 40)) return { x, y };
@@ -242,6 +267,9 @@ const Game = (() => {
   }
 
   function pickBreed(home = 'field') {
+    if (HERDS[home] && HERDS[home].grotto) return 'glowhorse';
+    // розовый дракон: только в волшебном биоме и очень редко (в радужный дождь — чаще)
+    if (home === 'magic' && !wild.some(w => w.breed === 'pinkdragon') && Math.random() < (Events.magicRain && Events.magicRain() ? 0.12 : 0.025)) return 'pinkdragon';
     if (HOME_BREEDS[home]) return HOME_BREEDS[home][Math.floor(Math.random() * HOME_BREEDS[home].length)];
     if (HERDS[home] && HERDS[home].island) { const b = HERDS[home].island.breeds; return b[Math.floor(Math.random() * b.length)]; }
     const entries = Object.entries(Genetics.BREEDS).filter(([, b]) => (home === 'field' ? b.weight > 0 : b.home === home));
@@ -291,6 +319,50 @@ const Game = (() => {
     h.phase += dt * (3 + h.spd * 0.045) * (h.spd > 4 ? 1 : 0);
   }
 
+  /* ---------------- действия лошадей ---------------- */
+  // брыкнуть, на дыбы, поесть траву, поваляться, поднять ногу, прижать уши, заржать, посмотреть вверх/вниз,
+  // поклон, почесаться коленкой, пойти задом, танцевать (позы рисует voxel.js по h.act)
+  const ACTS = {
+    rear: { name: 'Встать на дыбы', icon: '🐎', d: 2.4 },
+    kick: { name: 'Брыкнуть задними ногами', icon: '🦵', d: 1.3 },
+    graze: { name: 'Поесть травку', icon: '🌱', d: 5 },
+    roll: { name: 'Поваляться', icon: '🌀', d: 6 },
+    liftLeg: { name: 'Поднять ногу', icon: '🦶', d: 2.5 },
+    ears: { name: 'Прижать уши', icon: '👂', d: 2.5 },
+    neigh: { name: 'Заржать «Иго-го!»', icon: '📣', d: 1.8 },
+    lookUp: { name: 'Посмотреть вверх', icon: '⬆️', d: 2.5 },
+    lookDown: { name: 'Посмотреть вниз', icon: '⬇️', d: 2.5 },
+    bow: { name: 'Нагнуть голову', icon: '🙇', d: 2.6 },
+    scratch: { name: 'Почесать голову коленкой', icon: '🤭', d: 3 },
+    back: { name: 'Пойти задом', icon: '↩️', d: 2.6 },
+    dance: { name: 'Потанцевать на месте', icon: '💃', d: 4.5 },
+  };
+  function startAct(h, k, quiet) {
+    if (!h) return;
+    const d = ACTS[k] ? ACTS[k].d : k === 'play' ? 3 : 2;
+    h.act = { k, t: 0, d: d * (0.85 + Math.random() * 0.3), leg: Math.floor(Math.random() * 4) };
+    if (k === 'neigh' && !quiet) { Sound.neigh(); float('Иго-го! 🐴', h.x, h.y - 30, '#7a4a22'); }
+  }
+  function tickAct(h, dt) {
+    if (!h.act) return;
+    h.act.t += dt;
+    if (h.act.k === 'back' && h.state !== 'stall' && h.state !== 'ridden') {
+      h.x -= Math.cos(h.angle) * 38 * dt; h.y -= Math.sin(h.angle) * 38 * dt;
+      h.phase = (h.phase || 0) + dt * 5;
+      World.collide(h, 18);
+    }
+    if (h.act.t >= h.act.d) h.act = null;
+  }
+  // сама по себе лошадь иногда что-нибудь делает
+  const IDLE = [['graze', 6], ['lookUp', 1], ['ears', 1], ['liftLeg', 1], ['neigh', 0.5], ['roll', 0.35], ['kick', 0.45], ['scratch', 0.6], ['lookDown', 0.7], ['dance', 0.12], ['bow', 0.3]];
+  const STALL_IDLE = [['graze', 3], ['lookUp', 1], ['ears', 1], ['liftLeg', 1], ['neigh', 0.3], ['scratch', 0.6], ['lookDown', 1]];
+  function idleAct(h, dt, rate = 0.1, list = IDLE) {
+    if (h.act || Math.random() > dt * rate) return;
+    const tot = list.reduce((a, b) => a + b[1], 0);
+    let r = Math.random() * tot;
+    for (const [k, w] of list) { r -= w; if (r <= 0) { startAct(h, k, dist(h, S.player) > 450); return; } }
+  }
+
   function updateHerd(dt) {
     const p = S.player, m = mounted();
     for (const herd of Object.values(HERDS)) {
@@ -316,6 +388,7 @@ const Game = (() => {
         if (p.fly) fleeR *= 0.7;
         if (d < fleeR && w.flee <= 0) {
           w.flee = rand(1.4, 2.2);
+          w.act = null;
           if (herd.panic <= 0) {
             const ax = herd.x - p.x, ay = herd.y - p.y, al = Math.hypot(ax, ay) || 1;
             herd.tx = clamp(herd.x + (ax / al) * 600, F.x + 250, F.x + F.w - 250);
@@ -345,6 +418,7 @@ const Game = (() => {
             if (w.grazeT <= 0) { w.grazeT = rand(3, 8); w.slot.x += rand(-30, 30); w.slot.y += rand(-30, 30); }
             tx = w.x; ty = w.y; sp = 0;
             w.headTurn = Math.sin(time * 0.8 + w.seed) * 0.35;
+            if (!w.fly) idleAct(w, dt, 0.11);
           }
         }
         // остаться на своей территории
@@ -364,6 +438,8 @@ const Game = (() => {
           // кружит над островом
           sp = 90; tx = w.x + Math.cos(time * 0.4 + w.seed) * 120; ty = w.y + Math.sin(time * 0.3 + w.seed) * 120;
         }
+        if (w.act && w.flee <= 0) { tx = w.x; ty = w.y; sp = 0; }
+        tickAct(w, dt);
         moveToward(w, tx, ty, sp, dt, w.flee > 0 ? 4 : 2);
         for (const o of members) {
           if (o === w) continue;
@@ -376,13 +452,14 @@ const Game = (() => {
       }
 
       // новые лошади приходят взамен пойманных (на островах — только при смене табуна)
-      if (members.length < herd.count && !herd.island && !herd.sky) {
+      if (members.length < herd.count && !herd.island && !herd.sky && !herd.special) {
         herd.respawnT -= dt;
         if (herd.respawnT <= 0) {
           herd.respawnT = rand(8, 16);
           const q = randomFieldPoint(200, F);
           wild.push(makeWild(q.x, q.y, herd.id));
           if (herd.id === 'field') UI.toast('🐎 В поле прибежала новая лошадь!');
+          if (wild[wild.length - 1].breed === 'pinkdragon') UI.toast('💗🐉 В Грибном королевстве появился РОЗОВЫЙ ДРАКОН! Больше таких нигде нет!', 'good');
         }
       }
     }
@@ -460,6 +537,14 @@ const Game = (() => {
     const soil = (h, k = 1) => {
       if (raining && !dryRegion(h.x, h.y) && !World.inRect(h.x, h.y, World.STABLE)) h.mud = Math.min(100, (h.mud || 0) + dt * 2.2 * k);
     };
+    // мокрые лошади: под дождём шерсть намокает, потом высыхает
+    const wetten = (h, k = 1) => {
+      const under = raining && !dryRegion(h.x, h.y) && h.state !== 'stall' && !World.inRect(h.x, h.y, World.STABLE);
+      h.wet = under ? Math.min(100, (h.wet || 0) + dt * 5 * k) : Math.max(0, (h.wet || 0) - dt * (h.state === 'stall' ? 2.2 : 1.1));
+    };
+    for (const h of S.horses) wetten(h);
+    if (led) wetten(led);
+    for (const w of wild) wetten(w, 1);
     for (const h of S.horses) {
       if (h.state === 'stall') { h.mud = Math.max(0, (h.mud || 0) - dt * 0.05); continue; }
       soil(h, h.state === 'ridden' ? 1 + p.gait * 0.5 : 1);
@@ -495,36 +580,39 @@ const Game = (() => {
         const sp = stallSpot(h.stall);
         h.x = sp.x; h.y = sp.y; h.angle = sp.angle; h.spd = 0;
         h.headTurn = Math.sin(time * 0.5 + h.seed) * 0.35;
+        idleAct(h, dt, 0.04, STALL_IDLE);
+      } else if (h.state === 'walk') {
+        // жеребёнок гуляет с тобой — идёт следом
+        const p = S.player, back = { x: p.x - Math.cos(p.angle) * 60, y: p.y - Math.sin(p.angle) * 60 };
+        const d = dist(h, back);
+        if (!h.act || h.act.k === 'back') moveToward(h, back.x, back.y, d > 20 ? Math.min(d * 3, 260) : 0, dt, 5);
+        World.collide(h, 14);
+        if (d > 900) { h.x = back.x; h.y = back.y; }
+        h.headTurn = h.spd < 5 ? Math.sin(time * 0.9 + h.seed) * 0.5 : 0;
+        h.mood = clamp(h.mood + dt * 0.5, 0, 100);
+        if (h.spd < 5) idleAct(h, dt, 0.08);
+        stat('foalWalk', dt);
       } else if (inPaddock) {
         if (!h.wander || dist(h, h.wander) < 10 || Math.random() < dt * 0.05) {
           h.wander = Math.random() < 0.5 ? { x: h.x, y: h.y }
             : { x: rand(P.x + 50, P.x + P.w - 50), y: rand(P.y + 50, P.y + P.h - 50) };
         }
+        if (h.act) h.wander = { x: h.x, y: h.y };
         moveToward(h, h.wander.x, h.wander.y, dist(h, h.wander) > 10 ? 40 : 0, dt);
+        if (h.spd < 5) idleAct(h, dt, 0.1);
         h.x = clamp(h.x, P.x + 30, P.x + P.w - 30);
         h.y = clamp(h.y, P.y + 30, P.y + P.h - 30);
         h.headTurn = h.spd < 5 ? Math.sin(time * 0.7 + h.seed) * 0.4 : 0;
       }
 
-      // жеребёнок
-      if (h.preg) {
+      tickAct(h, dt);
+      // жеребёнок готов родиться — ждём, когда нажмут кнопку «Родить»
+      if (h.preg && !h.preg.ready) {
         h.preg.t -= dt;
         if (h.preg.t <= 0) {
-          const st = freeStall();
-          if (st < 0) {
-            h.preg.t = 0;
-            if (!h.preg.warned) { h.preg.warned = true; UI.toast(`🍼 ${h.name} скоро родит — освободи денник!`, 'warn'); }
-          } else {
-            const f = Horses.foal(h, h.preg.father, S.horses.map(x => x.name));
-            f.state = 'stall'; f.stall = st; f.hunger = 90; f.mood = 90;
-            S.horses.push(f);
-            S.stats.foals++;
-            if (Horses.isMagic(f)) stat('magicFoals');
-            h.preg = null;
-            const ph = Horses.pheno(f);
-            UI.toast(`🍼 У кобылы ${h.name} родился жеребёнок! ${f.name} — ${Horses.sexText(f)}, ${ph.name}`, 'good');
-            Sound.fanfare();
-          }
+          h.preg.t = 0; h.preg.ready = true;
+          UI.toast(`🍼 Жеребёнок у кобылы ${h.name} готов родиться! Нажми кнопку «Родить жеребёнка»`, 'good');
+          Sound.fanfare();
         }
       }
     }
@@ -551,7 +639,15 @@ const Game = (() => {
       UI.toast(`😮‍💨 ${m.name} ${Horses.v(m, 'устала', 'устал')} — только шагом. Отдохните в конюшне.`, 'warn');
     }
     if (p.fly && !Horses.canFly(m)) p.fly = false;
-    const max = m ? gaitSpeed(m, p.gait) * (p.fly ? 1.3 : 1) : 140;
+    // трюк верхом: лошадь стоит на месте (или пятится задом)
+    let backing = false;
+    if (m && m.act) {
+      m.act.t += dt;
+      if (m.act.k === 'back') { dx = -Math.cos(p.angle) * 0.35; dy = -Math.sin(p.angle) * 0.35; backing = true; p.target = null; }
+      else { dx = dy = 0; }
+      if (m.act.t >= m.act.d) m.act = null;
+    }
+    const max = m ? (backing ? 110 : gaitSpeed(m, p.gait)) * (p.fly ? 1.3 : 1) : 140;
     const k = Math.min(1, dt * (m ? 3.5 : 12));
     p.vx = (p.vx || 0) + (dx * max - (p.vx || 0)) * k;
     p.vy = (p.vy || 0) + (dy * max - (p.vy || 0)) * k;
@@ -563,7 +659,7 @@ const Game = (() => {
       stat('flyTime', dt);
     } else World.collide(p, m ? 20 : 10);
     p.spd = dt > 0 ? Math.hypot(p.x - ox, p.y - oy) / dt : 0;
-    if (p.spd > 8) p.angle = lerpAngle(p.angle, Math.atan2(p.y - oy, p.x - ox), Math.min(1, dt * (m ? 6 : 14)));
+    if (p.spd > 8 && !backing) p.angle = lerpAngle(p.angle, Math.atan2(p.y - oy, p.x - ox), Math.min(1, dt * (m ? 6 : 14)));
     p.phase = (p.phase || 0) + (m ? dt * (3 + p.spd * 0.045) * (p.spd > 4 ? 1 : 0) : p.spd * dt * 0.18);
 
     if (m) {
@@ -645,6 +741,9 @@ const Game = (() => {
       if (w.magic && w.magic.wings) stat('wing_' + Horses.wingType(w.magic.wings));
       if (w.magic && ['bee', 'dragonfly'].includes(Horses.wingType(w.magic.wings))) stat('wingSmall');
       if (w.home === 'desert' || w.home === 'tundra') stat('caught_' + w.home);
+      if (w.breed === 'pinkdragon') stat('pinkDragon');
+      if (w.home === 'train') stat('trainCaught');
+      if (w.magic && w.magic.holiday) stat('holidayCaught');
       if (HERDS[w.home] && HERDS[w.home].island) stat('caught_island');
       if (w.magic && w.magic.skeleton) stat('skeletonCaught');
       const ph = Horses.pheno(w);
@@ -935,7 +1034,8 @@ const Game = (() => {
     mount(h) {
       if (!atFarm()) return UI.toast('Подойди к конюшне или леваде');
       if (!S.tack.saddle || !S.tack.bridle) return UI.toast('Нужны седло и уздечка — купи их в повозке «Корм и амуниция»', 'warn');
-      if (!Horses.isAdult(h)) return UI.toast('Жеребёнок ещё маленький — подожди, пока вырастет (3 года)', 'warn');
+      if (!Horses.canRide(h)) return UI.toast(`На жеребёнке можно ездить только с ${Horses.RIDE_AGE} лет. ${h.name} сейчас ${Horses.ageText(h)} — гуляй с ним, корми и играй!`, 'warn');
+      if (h.state === 'walk') h.state = 'stall';
       if (h.energy < 5) return UI.toast(`${h.name} ${Horses.v(h, 'устала', 'устал')}. Пусть отдохнёт.`, 'warn');
       if (h.state === 'market') return UI.toast(`${h.name} стоит на рынке. Сначала сними с продажи у своей стойки`, 'warn');
       const cur = mounted();
@@ -971,6 +1071,8 @@ const Game = (() => {
     feed(h, item) {
       if (!atFarm()) return UI.toast('Подойди к конюшне или леваде');
       if (!(S.inv[item] > 0)) return UI.toast(`Нет: ${FOOD[item].name}. Купи в повозке.`, 'warn');
+      if (FOOD[item].foalOnly && h.age >= 3) return UI.toast('Молоко из бутылочки — для жеребят. Взрослым лучше сено и овёс', 'warn');
+      if (item === 'milk') { float('🍼 Ням-ням!', h.x, h.y - 30, '#e64980'); stat('milkFed'); h.mood = clamp(h.mood + 5, 0, 100); }
       if (h.hunger >= 99 && !FOOD[item].bait && item !== 'sugar') return UI.toast(`${h.name} ${Horses.v(h, 'сыта', 'сыт')}`);
       const f = FOOD[item];
       S.inv[item]--;
@@ -986,6 +1088,95 @@ const Game = (() => {
       h.clean = 100; h.mud = 0;
       h.mood = clamp(h.mood + 8, 0, 100);
       Sound.tick();
+    },
+    // трюки и действия лошади по команде
+    trick(h, k) {
+      if (!h || !ACTS[k]) return;
+      const ridden = h.state === 'ridden';
+      if (!ridden && h.state !== 'walk' && !atFarm()) return UI.toast('Подойди к конюшне или леваде');
+      if (ridden && k === 'roll') return UI.toast('Чтобы лошадь повалялась, сначала слезь с неё', 'warn');
+      if (h.state === 'market') return UI.toast(`${h.name} стоит на рынке`);
+      UI.closeModal();
+      startAct(h, k);
+      if (k === 'roll' && (h.mud || 0) < 30) h.mud = Math.min(100, (h.mud || 0) + 15);
+      h.mood = clamp(h.mood + 2, 0, 100);
+      stat('tricks');
+      if (k === 'dance') stat('dances');
+    },
+    // гулять с жеребёнком: он идёт следом
+    walk(h) {
+      if (!h) return;
+      if (h.state === 'walk') { h.state = 'stall'; UI.toast(`🏠 ${h.name} ${Horses.v(h, 'вернулась', 'вернулся')} в денник`); UI.closeModal(); return; }
+      if (!atFarm()) return UI.toast('Подойди к конюшне или леваде');
+      if (Horses.canRide(h)) return UI.toast(`${h.name} уже ${Horses.v(h, 'взрослая', 'взрослый')} — на ${Horses.v(h, 'ней', 'нём')} можно ездить верхом`);
+      if (mounted()) return UI.toast('Сначала слезь с лошади');
+      if (h.state === 'market') return UI.toast(`${h.name} стоит на рынке`);
+      for (const o of S.horses) if (o.state === 'walk') o.state = 'stall';
+      h.state = 'walk';
+      h.x = S.player.x - 50; h.y = S.player.y + 30;
+      UI.closeModal();
+      UI.toast(`🐴 Гуляем с жеребёнком по кличке ${h.name}! Он идёт за тобой. Вернуть в денник — кнопка внизу`, 'good');
+    },
+    stopWalk() { const h = S.horses.find(o => o.state === 'walk'); if (h) act.walk(h); },
+    pet(h) {
+      if (!h) return;
+      if (h.state !== 'walk' && !atFarm()) return UI.toast('Подойди к конюшне');
+      h.mood = clamp(h.mood + 10, 0, 100);
+      float('💕', h.x, h.y - 30, '#e64980');
+      if (!h.act) startAct(h, Math.random() < 0.5 ? 'lookUp' : 'ears', true);
+      stat('petted');
+      Sound.tick();
+    },
+    play(h) {
+      if (!h) return;
+      if (h.state !== 'walk' && !atFarm()) return UI.toast('Подойди к конюшне');
+      if (h.energy < 10) return UI.toast(`${h.name} ${Horses.v(h, 'устала', 'устал')} — пусть отдохнёт`, 'warn');
+      UI.closeModal();
+      h.mood = clamp(h.mood + 15, 0, 100);
+      h.energy = clamp(h.energy - 8, 0, 100);
+      startAct(h, Math.random() < 0.6 ? 'play' : 'dance');
+      float('🎾 Играем!', h.x, h.y - 30, '#1c7ed6');
+      stat('foalPlay');
+    },
+    // кобыла готова — жеребёнок рождается по кнопке, с заставкой
+    birth(h) {
+      h = h || S.horses.find(o => o.preg && o.preg.ready);
+      if (!h || !h.preg || !h.preg.ready) return;
+      const st = freeStall();
+      if (st < 0) return UI.toast('Нет свободного денника для жеребёнка — освободи место!', 'warn');
+      const f = Horses.foal(h, h.preg.father, S.horses.map(x => x.name));
+      f.state = 'stall'; f.stall = st; f.hunger = 90; f.mood = 90;
+      S.horses.push(f);
+      S.stats.foals++;
+      if (Horses.isMagic(f)) stat('magicFoals');
+      h.preg = null;
+      UI.closeModal();
+      UI.birthScene(h, f);
+      Sound.fanfare();
+    },
+    // уход в виде мини-игр: расчесать, помыть, подковать
+    care(h, kind) {
+      if (!h) return;
+      if (h.state !== 'walk' && !atFarm()) return UI.toast('Подойди к конюшне или леваде');
+      if (kind === 'brush' && !S.tack.brush) return UI.toast('Нужна щётка — купи в повозке «Корм и амуниция»', 'warn');
+      if (kind === 'shoe' && !(S.inv.horseshoes > 0)) return UI.toast('Нужны новые подковы — купи в повозке «Корм и амуниция»', 'warn');
+      if (kind === 'shoe' && h.age < 2) return UI.toast('Жеребятам подковы не нужны — копытца ещё мягкие', 'warn');
+      UI.closeModal();
+      Care.open(kind, h, score => {
+        if (kind === 'brush') {
+          h.clean = 100; h.mood = clamp(h.mood + 6 + score * 6, 0, 100);
+          UI.toast(`🪮 ${h.name} ${Horses.v(h, 'расчёсана', 'расчёсан')} и блестит!`, 'good'); stat('brushed');
+        } else if (kind === 'wash') {
+          h.clean = 100; h.mud = 0; h.wet = 100; h.mood = clamp(h.mood + 8 + score * 6, 0, 100);
+          UI.toast(`🛁 ${h.name} чистенькая и мокрая — скоро высохнет!`, 'good'); stat('washed');
+        } else if (kind === 'shoe') {
+          S.inv.horseshoes--;
+          h.shoes = true; h.mood = clamp(h.mood + 4, 0, 100);
+          Horses.addTrain(h, 'speed', 1 + score * 2); Horses.addTrain(h, 'jump', 1 + score * 2);
+          UI.toast(`🔧 ${h.name} в новых подковах! Скорость и прыжки чуть выше`, 'good'); stat('shod');
+        }
+        Sound.fanfare();
+      });
     },
     rename(h, n) {
       if (n && n.trim()) h.name = n.trim().slice(0, 20);
@@ -1006,6 +1197,7 @@ const Game = (() => {
     },
     sell(h) {
       const p = S.player;
+      if (h && h.state === 'walk') return UI.toast('Сначала верни жеребёнка в денник');
       if (dist(p, { x: World.SELL.x + World.SELL.w / 2, y: World.SELL.y + World.SELL.h / 2 }) > 170) return UI.toast('Подойди к повозке «Продажа лошадей»');
       if (h === led) {
         const price = sellPrice(h, true);
@@ -1084,6 +1276,7 @@ const Game = (() => {
       if (pr) pr.fn();
     },
     lasso() { startLasso(nearestCatchable()); },
+    tricks() { const m = mounted(); if (m) UI.openTricks(m.id); },
     toggleFly() {
       const p = S.player, m = mounted();
       if (!Horses.canFly(m)) return UI.toast('Летать умеют лошади с крыльями (пегасы, бабочки, драконы, вороны, стрекозы, пчёлки) и облачные лошадки');
@@ -1196,7 +1389,16 @@ const Game = (() => {
       : 'В пещере темно. Здесь бродят лошади-скелеты и привидения, где-то спрятан сундук графа, а в глубине светится портал';
     if (reg === 'market') return 'Рынок: покупай и продавай лошадей, торгуйся, прокачивай навыки и меняйся вещами';
     if (S.player.y > World.H) return 'Небесные острова! Здесь живут крылатые и облачные лошадки. Портал домой — в центре Облачного острова';
-    if (reg === 'mushroom') return 'Грибное королевство: здесь живут пегасы, единороги, огненные и ледяные лошадки';
+    if (reg === 'mushroom') return 'Грибное королевство: здесь живут пегасы, единороги и стихийные лошадки. В дождь здесь радужные лужи — и может прилететь розовый дракон!';
+    const tr = Train.hud();
+    if (tr.catchLeft != null && Train.near(S.player)) return `🚂 Поезд у станции! Лови красивых лошадей — осталось ${Math.ceil(tr.catchLeft)} с`;
+    if (reg === 'desert') return tr.moving ? '🚂 По рельсам едет поезд — спеши к станции!' : `Пустыня: здесь бегают зебры. Поезд с лошадьми приедет к станции через ${Math.ceil(tr.next / 60)} мин`;
+    if (reg === 'grotto') return 'Пещерные холмы: загляни в маленькие пещерки — там живут чёрные лошади со светящимися узорами';
+    if (reg === 'grottocave') return '✨ Пещерка! Чёрные лошади светятся своими узорами, а за ними тянется сияние';
+    if (reg === 'foxwood' || reg === 'deepforest') return 'Густой лес: здесь живут лисьи лошади с пушистыми хвостами. Олени тоже где-то рядом';
+    if (reg === 'dragonrock') return 'Драконьи скалы: здесь живут чешуйчатые лошади с драконьими крыльями и рогами. Осторожно, лава!';
+    if (reg === 'steppe') return 'Степь: дикие лошади Пржевальского, олени и высокая трава';
+    if (reg === 'i4') return 'Костяной остров: лошади с черепами и рёбрами, а вокруг — огромные кости';
     if (isNight()) return 'Ночь: табуны спят — подкрасться к лошадям легче. Фонари освещают ферму';
     if (!Quests.journal().length) return 'Поговори с жителями (💬) — у них есть задания. Список заданий — кнопка 📜';
     return 'Аллюры: 1 — шаг, 2 — рысь, 3 — галоп. Задания — кнопка 📜, стройка — 🔨';
@@ -1214,6 +1416,7 @@ const Game = (() => {
         if (code === 'Escape') UI.closeModal();
         return;
       }
+      if (Care.isOpen() || UI.isBirthOpen()) return;
       if (Farm.mode) {
         if (code === 'Escape') { Farm.cancel(); return; }
         if (code === 'KeyR') { Farm.rotate(); return; }
@@ -1238,6 +1441,8 @@ const Game = (() => {
       if (code === 'KeyM') act.toggleDetector();
       if (code === 'KeyB') UI.openBuild();
       if (code === 'KeyJ') UI.openQuests();
+      if (code === 'KeyT') act.tricks();
+      if (code === 'KeyN' && mounted()) startAct(mounted(), 'neigh');
     } else keys.delete(code);
   }
 
@@ -1247,7 +1452,7 @@ const Game = (() => {
   }
 
   function onPointer(e, type) {
-    if (UI.isModalOpen() || UI.isLassoOpen() || !Voxel.ready) return;
+    if (UI.isModalOpen() || UI.isLassoOpen() || Care.isOpen() || UI.isBirthOpen() || !Voxel.ready) return;
     if (Farm.mode) {
       const w = toWorld(e);
       if (type === 'down') Farm.buildAt(w.x, w.y);
@@ -1342,6 +1547,10 @@ const Game = (() => {
     }
     ctx.globalAlpha = 1;
     for (const r of Events.rivals()) lbl(r.name, r.h.x, r.h.y, 120, 12, '#1c4f8a');
+    for (const b of AI.bots()) lbl('🤖 ' + b.name, b.x, b.y, 125, 13, '#5f3dc4');
+    lbl('🚂 СТАНЦИЯ', World.STATION.x + 110, World.STATION.y - 25, 110, 16, '#c92a2a');
+    for (const g of World.GROTTOS) lbl('🕳️ Пещерка', g.x, g.y - g.r - 30, 120, 14, '#343a40');
+    { const wk = S.horses.find(o => o.state === 'walk'); if (wk) lbl('🐾 ' + wk.name, wk.x, wk.y, 80, 12, '#1c4f8a'); }
     lbl('🏁 СКАЧКИ', Events.START.x, Events.START.y, 90, 15);
     const shoe = Events.shoe();
     if (shoe) lbl('✨🧲✨', shoe.x, shoe.y + Math.sin(time * 5) * 3, 15, 16, '#b07800');
@@ -1363,8 +1572,9 @@ const Game = (() => {
     } else if (!S.horses.length && !led && p.x < World.FIELD.x - 100) arrowTo(HERDS.field.x, HERDS.field.y);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     Events.drawScreen(ctx, canvas.width, canvas.height, dpr, time);
+    Holidays.drawScreen(ctx, canvas.width, canvas.height, dpr, time);
     Draw.minimap(mmctx, S, api);
-    if (p.y <= World.H) Events.drawMinimap(mmctx, mmctx.canvas.width / World.W);
+    if (p.y <= World.H) Events.drawMinimap(mmctx, Draw.mmScale(mmctx.canvas));
   }
 
   function render() {
@@ -1381,6 +1591,24 @@ const Game = (() => {
     return 0;
   }
 
+  // во время мини-игр, заставки и окон игра стоит на паузе
+  const paused = () => UI.isModalOpen() || Care.isOpen() || UI.isBirthOpen();
+  // радужный дождь в волшебном биоме: иногда прилетает розовый дракон
+  let wasRaining = false;
+  function rainEvents() {
+    const r = Events.raining();
+    if (r && !wasRaining && Math.random() < 0.35 && !wild.some(w => w.breed === 'pinkdragon')) {
+      const H = HERDS.magic, q = randomFieldPoint(300, H.area);
+      const old = wild.find(w => w.home === 'magic');
+      if (old) wild = wild.filter(w => w !== old);
+      const d = makeWild(q.x, q.y, 'magic');
+      if (d.breed !== 'pinkdragon') Object.assign(d, Horses.create({ breed: 'pinkdragon', age: rand(4, 9) }), { x: q.x, y: q.y, home: 'magic', slot: { x: 0, y: 0 }, flee: 0, grazeT: 1 });
+      wild.push(d);
+      UI.toast('🌈 В Грибном королевстве пошёл радужный дождь… Говорят, там появился розовый дракон! 💗🐉', 'good');
+    }
+    wasRaining = r;
+  }
+
   /* ---------------- главный цикл ---------------- */
   let last = 0, hudT = 0, visitT = 0;
   function frame(ts) {
@@ -1391,7 +1619,7 @@ const Game = (() => {
       if (lasso.pos > 1) { lasso.pos = 1; lasso.dir = -1; }
       if (lasso.pos < 0) { lasso.pos = 0; lasso.dir = 1; }
       UI.updateLasso(lasso);
-    } else if (!UI.isModalOpen()) {
+    } else if (!paused()) {
       time += dt;
       S.clock = (S.clock + dt * 3) % 1440;
       lassoCd = Math.max(0, lassoCd - dt);
@@ -1406,6 +1634,10 @@ const Game = (() => {
       updateMud(dt);
       Market.update(dt);
       Creatures.update(dt);
+      Train.update(dt);
+      Holidays.update(dt);
+      AI.update(dt);
+      rainEvents();
       visitT -= dt;
       if (visitT <= 0) { visitT = 0.5; Quests.updateVisits(); }
       if (ex) {
@@ -1432,6 +1664,9 @@ const Game = (() => {
         led: led ? led.name : null, exercise: Farm.hud() || exerciseHud(), clock: clockText(),
         detector: S.tack.detector ? { on: !!S.player.detector, signal: Farm.signal() } : null,
         quests: Quests.journal().length, region: World.REGION_NAMES[World.regionAt(S.player.x, S.player.y)],
+        walk: (S.horses.find(o => o.state === 'walk') || {}).name || null,
+        birth: (S.horses.find(o => o.preg && o.preg.ready) || {}).name || null,
+        train: Train.hud(), holiday: Holidays.hud(), ai: AI.hud(),
       });
     }
     requestAnimationFrame(frame);
@@ -1447,7 +1682,9 @@ const Game = (() => {
     resolveLasso, save, sellPrice, float, makeWild,
     findHorse: id => S.horses.find(x => x.id === id) || (led && led.id === id ? led : null) || Events.findHorse(id) || Market.findHorse(id),
     rivals: () => Events.rivals(), gates: () => Events.gates(), bunnies: () => Events.bunnies(), weather: () => Events.weather(),
-    herds: () => HERDS, mud: h => h.mud || 0,
+    herds: () => HERDS, mud: h => h.mud || 0, ACTS, startAct,
+    removeWild: pred => { wild = wild.filter(w => !pred(w)); },
+    addWild: h => wild.push(h),
   };
 
   function start() {
@@ -1473,6 +1710,9 @@ const Game = (() => {
     Quests.init(api);
     Creatures.init(api);
     Market.init(api);
+    Train.init(api);
+    Holidays.init(api);
+    AI.init(api);
     canvas.addEventListener('wheel', e => { Voxel.zoom(e.deltaY); e.preventDefault(); }, { passive: false });
     requestAnimationFrame(ts => { last = ts; requestAnimationFrame(frame); });
     Voxel.load().then(ok => {
@@ -1509,6 +1749,23 @@ const Sound = (() => {
     thud: () => tone(110, 0.2, 'triangle', 0.2),
     whoosh: () => tone(500, 0.2, 'sine', 0.05),
     fanfare: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'triangle', 0.1, i * 0.11)),
+    // лошадиное «иго-го»: высокий звук с дрожанием, который спускается вниз
+    neigh: () => {
+      if (!on) return;
+      try {
+        ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+        const t0 = ac.currentTime;
+        const o = ac.createOscillator(), g = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain(), f = ac.createBiquadFilter();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(650, t0); o.frequency.linearRampToValueAtTime(1150, t0 + 0.22); o.frequency.linearRampToValueAtTime(820, t0 + 0.6); o.frequency.linearRampToValueAtTime(420, t0 + 1.15);
+        lfo.frequency.value = 13; lg.gain.value = 70; lfo.connect(lg); lg.connect(o.frequency);
+        f.type = 'lowpass'; f.frequency.value = 1900;
+        g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.08, t0 + 0.06); g.gain.exponentialRampToValueAtTime(0.03, t0 + 0.8); g.gain.exponentialRampToValueAtTime(0.0008, t0 + 1.2);
+        o.connect(f); f.connect(g); g.connect(ac.destination);
+        o.start(t0); lfo.start(t0); o.stop(t0 + 1.25); lfo.stop(t0 + 1.25);
+      } catch (e) { /* звук недоступен */ }
+    },
+    train: () => { tone(392, 0.45, 'square', 0.05); tone(330, 0.6, 'square', 0.05, 0.5); },
     toggle() { on = !on; return on; },
     get on() { return on; },
   };
