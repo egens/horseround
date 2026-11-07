@@ -120,10 +120,44 @@ const Voxel = (() => {
       const d = Items.DYES[h.maneDye];
       return { c: d.color === 'rainbow' ? Items.RAINBOW[i % Items.RAINBOW.length] : d.color, glow: false };
     }
+    const E = ph.elem && Horses.ELEMS[ph.elem];
+    if (E) {
+      if (ph.elem === 'crystal') { const t = ph.tint; return { c: [Genetics.mix(t, '#ffffff', 0.55), t, Genetics.mix(t, '#ffffff', 0.25)][i % 3], glow: true }; }
+      if (E.maneCols) return { c: E.maneCols[(i * 3) % E.maneCols.length], glow: !!E.maneGlow };
+    }
     if (mag.mane === 'fire') return { c: FIRE[(i * 7) % FIRE.length], glow: true };
     if (mag.mane === 'ice') return { c: ICE[(i * 5) % ICE.length], glow: true };
     if (mag.skeleton) return { c: '#9fe6a0', glow: true };
     return { c: B.fjordMane ? '#efe4cf' : ph.mane, glow: false };
+  }
+
+  // узор стихийной лошадки: цвет кубика корпуса/шеи/головы
+  const RAINBOW7 = ['#ff6b6b', '#ff922b', '#ffd43b', '#51cf66', '#4dabf7', '#5c7cfa', '#cc5de8'];
+  function elemColor(ph, x, y, z, part, rnd) {
+    const e = ph.elem, mix = Genetics.mix;
+    switch (e) {
+      case 'ice': return rnd() < 0.18 ? '#e7f5ff' : y >= 12 || part === 'head' ? '#a5d8ff' : rnd() < 0.5 ? '#74c0fc' : '#4dabf7';
+      case 'crystal': { const t = ph.tint, f = ((x + y * 2 + z * 3) % 3 + 3) % 3; return f === 0 ? mix(t, '#ffffff', 0.45) : f === 1 ? t : mix(t, '#000000', 0.18); }
+      case 'fire': return y >= 12 ? (rnd() < 0.5 ? '#ffd43b' : '#fcc419') : y >= 10 ? (rnd() < 0.5 ? '#ff922b' : '#fd7e14') : (rnd() < 0.5 ? '#f03e3e' : '#e8590c');
+      case 'water': { const band = Math.floor(y + Math.sin(x * 0.7 + z) * 1.4); const k = ((band % 3) + 3) % 3; return k === 0 ? '#1c7ed6' : k === 1 ? '#74c0fc' : (rnd() < 0.5 ? '#f1f8ff' : '#a5d8ff'); }
+      case 'rainbow': return RAINBOW7[((Math.floor((x + 8) / 2.3) % 7) + 7) % 7];
+      case 'sun': return y >= 12 ? '#ffe066' : y >= 10 ? (rnd() < 0.6 ? '#fcc419' : '#ffd43b') : (rnd() < 0.5 ? '#f59f00' : '#ff922b');
+      case 'sand': return rnd() < 0.25 ? '#d4b67a' : rnd() < 0.2 ? '#f4e4bc' : '#e9d3a1';
+      case 'stone': {
+        if (y >= 12 && rnd() < 0.12) return '#5c940d';                                   // мох на спине
+        const b = Math.abs((Math.floor(x / 2) * 7 + Math.floor(y / 2) * 13 + Math.floor(z / 2) * 5) % 4);
+        if ((x + 64) % 4 === 0 && rnd() < 0.5) return '#495057';                          // трещины
+        return ['#868e96', '#adb5bd', '#6c757d', '#909296'][b];
+      }
+      case 'mushroom': return y >= 11 && part === 'barrel' ? ((x + z + 40) % 3 === 0 && y === 12 ? '#ffffff' : '#e03131') : rnd() < 0.15 ? '#e8d9b5' : '#f1e3c6';
+      case 'leaf': { const v = (x * 3 + y * 5 + z * 7 + 100) % 6; return v === 0 ? '#2b8a3e' : v === 1 ? '#8ce99a' : rnd() < 0.06 ? '#fab005' : rnd() < 0.5 ? '#40c057' : '#37b24d'; }
+      case 'damp': {
+        const sw = Math.sin(x * 0.85 + z * 1.4) * Math.cos(y * 1.2 - x * 0.35);
+        if (sw > 0.62 || (part === 'head' && y === 16 && x === 11)) return '#f8f9fa';        // белые узоры
+        return rnd() < 0.3 ? '#3b4a59' : '#4a5a6a';
+      }
+    }
+    return ph.body;
   }
 
   function horseCells(h, ph, B) {
@@ -152,6 +186,7 @@ const Voxel = (() => {
     })) : [];
     const spot = ph.greyLevel > 0.6 ? '#3a3a3a' : Genetics.mix(ph.body, '#000000', 0.2);
     const bodyCol = (x, y, z, part, top) => {
+      if (ph.elem) return elemColor(ph, x, y, z, part, rnd);
       if (blobs.some(b => (x - b.x) ** 2 + ((y - b.y) * 0.8) ** 2 + ((z - b.z) * 0.6) ** 2 < b.r * b.r)) return WHITE;
       if (ph.leo && part === 'barrel' && x <= 0 && y >= 9) return rnd() < 0.2 ? spot : WHITE;
       let c = ph.body;
@@ -207,23 +242,52 @@ const Voxel = (() => {
       glow.set(key3(12, 17, -1), '#fff3bf'); glow.set(key3(12, 17, 0), '#fff3bf');
       glow.set(key3(12, 18, 0), '#ffe066'); glow.set(key3(13, 19, 0), '#ffd43b'); glow.set(key3(13, 20, 0), '#fff9db');
     }
+    // украшения стихий на спине
+    if (ph.elem === 'crystal') {
+      const lt = Genetics.mix(ph.tint, '#ffffff', 0.5);
+      for (const x of [-6, -2, 2]) { glow.set(key3(x, 13, -1), lt); glow.set(key3(x, 14, -1), ph.tint); glow.set(key3(x + 1, 13, 0), lt); }
+    } else if (ph.elem === 'mushroom') {
+      for (const [x, z, c] of [[-5, -2, '#e03131'], [-1, 1, '#f08c00'], [3, -1, '#e03131']]) {
+        put(x, 13, z, '#f8f4ea');
+        for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) put(x + dx, 14, z + dz, c);
+        put(x, 15, z, c); put(x + 1, 14, z + 1, '#ffffff');
+      }
+    } else if (ph.elem === 'leaf') {
+      for (const [x, z] of [[-6, 0], [-3, -2], [0, 1], [4, -1]]) { put(x, 13, z, '#2f9e44'); put(x + 1, 13, z, '#69db7c'); put(x, 14, z, '#51cf66'); }
+    } else if (ph.elem === 'sun') {
+      for (const [x, y] of [[10, 18], [12, 19], [14, 18]]) glow.set(key3(x, y, -1), '#ffe066');      // солнечная корона
+    } else if (ph.elem === 'ice') {
+      for (const x of [-5, -1, 3]) glow.set(key3(x, 13, -1), '#e7f5ff');
+    }
     return { cells, glow };
   }
 
+  // грязь: уровень 0–4 — до какой высоты ноги в грязи
+  const MUD = ['#5a3d22', '#6b4a2b', '#4a321c', '#7a5634'];
+  const mudLevel = h => Math.min(4, Math.floor((h.mud || 0) / 22));
   function legCells(h, ph, i) {
     const cells = new Map();
     const mag = h.magic || {};
     const white = h.marks.legs[i] || ph.tob;
+    const ml = mudLevel(h), rnd = World.rng(h.seed + i * 31);
+    const muddy = (c, y) => (ml && y <= -7 + ml + 1 && (y < -7 + ml + 1 || rnd() < 0.6) ? MUD[Math.floor(rnd() * MUD.length)] : c);
     for (let y = -7; y <= -1; y++) for (let x = -1; x <= 0; x++) for (let z = -1; z <= 0; z++) {
       if (mag.skeleton) {
         if (x === 0 && z === 0 || y === -4 || y === -7) cells.set(key3(x, y, z), y === -7 ? '#8d8476' : y === -4 ? BONE2 : BONE);
         continue;
       }
       let c = y >= -2 ? ph.body : ph.legs;
-      if (ph.tob && y < -2) c = WHITE;
-      else if (white && y <= -4) c = WHITE;
-      if (y === -7) c = '#2b2420';
-      cells.set(key3(x, y, z), c);
+      if (ph.elem) {
+        c = ph.elem === 'rainbow' ? RAINBOW7[(i * 2 + (y + 7)) % 7] : ph.elem === 'crystal' || ph.elem === 'stone' || ph.elem === 'water' || ph.elem === 'fire' || ph.elem === 'leaf' || ph.elem === 'damp'
+          ? elemColor(ph, x + i * 3, y + 7, z, 'leg', rnd) : y >= -2 ? ph.body : ph.legs;
+        if (ph.elem === 'leaf' && y <= -3) c = '#5c3d1e';
+        if (y === -7) c = ph.elem === 'ice' ? '#d0ebff' : ph.elem === 'sun' ? '#f08c00' : ph.elem === 'crystal' ? Genetics.mix(ph.tint, '#000000', 0.35) : '#2b2420';
+      } else {
+        if (ph.tob && y < -2) c = WHITE;
+        else if (white && y <= -4) c = WHITE;
+        if (y === -7) c = '#2b2420';
+      }
+      cells.set(key3(x, y, z), muddy(c, y));
     }
     return cells;
   }
@@ -435,6 +499,13 @@ const Voxel = (() => {
       const pivot = new T.Group();
       pivot.position.set(x * V, 7 * V, z * V);
       pivot.add(mk(voxelGeometry(legCells(h, ph, i), V, h.seed + i)));
+      if (mag.cloud) {
+        // облачко под копытом
+        const cc = new Map();
+        for (let cx = -2; cx <= 1; cx++) for (let cz = -2; cz <= 1; cz++) if (Math.abs(cx + 0.5) + Math.abs(cz + 0.5) < 3) cc.set(key3(cx, -9, cz), (cx + cz) % 2 ? '#ffffff' : '#e7f5ff');
+        cc.set(key3(-1, -8, -1), '#ffffff'); cc.set(key3(0, -8, 0), '#ffffff'); cc.set(key3(-1, -8, 0), '#f1f3f5');
+        pivot.add(material ? mk(voxelGeometry(cc, V, 5)) : glowMesh(voxelGeometry(cc, V, 5)));
+      }
       group.add(pivot);
       legs.push(pivot);
     });
@@ -466,7 +537,7 @@ const Voxel = (() => {
     o.group.traverse(n => { if (n.geometry) n.geometry.dispose(); });
     scene.remove(o.group);
   }
-  const horseKey = h => `${h._phKey}|${h.maneStyle || ''}|${h.maneDye || ''}|${JSON.stringify(h.magic || 0)}`;
+  const horseKey = h => `${h._phKey}|${h.maneStyle || ''}|${h.maneDye || ''}|${JSON.stringify(h.magic || 0)}|${mudLevel(h)}`;
 
   /* ---------- земля ---------- */
   function groundTexture() {
@@ -521,7 +592,7 @@ const Voxel = (() => {
     const x = tr.x * K, z = tr.y * K, R = tr.r * K;
     const L = chunk(x, z), Gl = chunk(x, z, true);
     const k = tr.kind;
-    if (k === 'oak' || k === 'birch') {
+    if (k === 'oak' || k === 'birch' || k === 'vinetree') {
       L.push(box(x, 1.5, z, 0.9, 3, 0.9, k === 'birch' ? '#e9ecef' : '#6b4423'));
       if (k === 'birch') { L.push(box(x + 0.46, 1.2, z, 0.02, 0.3, 0.5, '#222')); L.push(box(x - 0.46, 2.2, z, 0.02, 0.25, 0.4, '#222')); }
       const g1 = k === 'birch' ? '#7dbb4f' : '#4f8f3a', g2 = k === 'birch' ? '#a3d46c' : '#6eae4c';
@@ -529,6 +600,16 @@ const Voxel = (() => {
       for (let i = 0; i < n; i++) {
         const a = r() * Math.PI * 2, d = r() * R * 0.6, sz = R * (0.5 + r() * 0.35);
         L.push(box(x + Math.cos(a) * d, 3 + R * 0.5 + r() * R * 0.6, z + Math.sin(a) * d, sz, sz * 0.8, sz, r() < 0.4 ? g2 : g1));
+      }
+      if (k === 'vinetree') {
+        // лианы свисают с кроны, на них — цветочки
+        for (let i = 0; i < 9; i++) {
+          const a = r() * Math.PI * 2, d = R * (0.55 + r() * 0.3), len = 1.5 + r() * 2.5;
+          const vx = x + Math.cos(a) * d, vz = z + Math.sin(a) * d, top = 3 + R * 0.4;
+          L.push(box(vx, top - len / 2, vz, 0.18, len, 0.18, r() < 0.5 ? '#2f9e44' : '#5c940d'));
+          if (r() < 0.5) L.push(box(vx, top - len, vz, 0.35, 0.35, 0.35, ['#ff8fab', '#ffe066', '#c77dff'][Math.floor(r() * 3)]));
+        }
+        for (let i = 0; i < 4; i++) L.push(box(x + (r() - 0.5) * 0.4, 0.5 + i * 0.7, z + 0.46, 0.15, 0.6, 0.06, '#2f9e44'));
       }
     } else if (k === 'pine' || k === 'spruce') {
       const tall = k === 'spruce' ? 1.35 : 1;
@@ -634,6 +715,144 @@ const Voxel = (() => {
     L.push(box(cx, 1.1, cz + d / 2 + 0.05, 1.4, 2.2, 0.1, '#5b3a22'));
     for (const s of [-1, 1]) Gl.push(box(cx + s * w * 0.3, 2.2, cz + d / 2 + 0.06, 1.1, 0.9, 0.08, '#fff3bf'));
     if (hh.name === 'Кузница') { L.push(box(cx + w * 0.3, 6.6, cz - d * 0.2, 1, 3, 1, '#495057')); L.push(box(cx - w * 0.6, 0.6, cz + d * 0.6, 1.4, 1.2, 0.8, '#343a40')); }
+  }
+
+  /* ---------- рынок ---------- */
+  function addMarket() {
+    const M = World.MARKET, cx = (M.x + M.w / 2) * K, cz = (M.y + M.h / 2) * K, L = chunk(cx, cz);
+    const SELLER = { horses: '#c92a2a', trainer: '#1971c2', swap: '#862e9c' };
+    for (const st of World.MARKET_STALLS) {
+      const x = (st.x + st.w / 2) * K, z = (st.y + st.h / 2) * K, w = st.w * K, d = st.h * K;
+      L.push(box(x, 0.8, z, w, 1.6, d, '#8a5a32'));                       // прилавок
+      L.push(box(x, 1.65, z, w + 0.3, 0.12, d + 0.3, '#b08850'));
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) L.push(box(x + sx * (w / 2 - 0.2), 2.4, z + sz * (d / 2 + 0.6), 0.25, 4.8, 0.25, '#6b4423'));
+      const n = 6;
+      for (let i = 0; i < n; i++) L.push(box(x - w / 2 + (w / n) * (i + 0.5), 4.9, z, w / n, 0.35, d + 2, i % 2 ? '#ffffff' : st.roof, { rx: 0.18 }));
+      // товары на прилавке
+      const goods = st.id === 'horses' ? ['#5b3a1e', '#2b1a10', '#5b3a1e'] : st.id === 'trainer' ? ['#adb5bd', '#ffd43b', '#adb5bd'] : st.id === 'swap' ? ['#c77dff', '#ffd43b', '#69db7c'] : ['#ffe066', '#ff8fab', '#74c0fc'];
+      goods.forEach((c, i) => L.push(box(x - w / 3 + i * w / 3, 1.95, z, 1.4, 0.6, 1.2, c)));
+      if (SELLER[st.id]) {
+        L.push(box(x, 1.1, z - d / 2 - 1.2, 0.9, 2.2, 1.2, SELLER[st.id]));
+        L.push(box(x, 2.7, z - d / 2 - 1.2, 1.2, 1.2, 1.2, '#f2c9a5'));
+        L.push(box(x, 3.35, z - d / 2 - 1.2, 1.3, 0.3, 1.3, '#5b3a22'));
+      }
+    }
+    // коновязь для лошадей на продажу
+    const ry = (M.y + 205) * K;
+    L.push(box((M.x + 50 + 200) * K, 1.4, ry, 40, 0.25, 0.25, '#6b4423'));
+    for (let i = 0; i <= 5; i++) L.push(box((M.x + 50 + i * 80) * K, 0.8, ry, 0.35, 1.6, 0.35, '#5b3a22'));
+    L.push(box((M.x + 540) * K, 1.4, ry, 16, 0.25, 0.25, '#6b4423'));
+    for (let i = 0; i <= 2; i++) L.push(box((M.x + 460 + i * 80) * K, 0.8, ry, 0.35, 1.6, 0.35, '#5b3a22'));
+    // флажки по краям площади
+    for (let i = 0; i <= 8; i++) {
+      const fx = (M.x + i * M.w / 8) * K;
+      L.push(box(fx, 2, (M.y - 10) * K, 0.25, 4, 0.25, '#6b4423'));
+      L.push(box(fx + 0.6, 3.6, (M.y - 10) * K, 1, 0.7, 0.08, ['#ff6b6b', '#ffd43b', '#51cf66', '#4dabf7', '#cc5de8'][i % 5]));
+    }
+    // ящики и бочки
+    for (const [bx, by] of [[M.x + 20, M.y + 330], [M.x + 620, M.y + 330], [M.x + 640, M.y + 20]]) {
+      L.push(box(bx * K, 0.6, by * K, 1.2, 1.2, 1.2, '#a0522d'));
+      L.push(box(bx * K + 1.4, 0.7, by * K, 1, 1.4, 1, '#6b4423'));
+    }
+  }
+
+  /* ---------- портал: каменная арка и светящийся вихрь ---------- */
+  const portals = [];
+  function addPortal(P, color) {
+    const g = new T.Group();
+    g.position.set(P.x * K, 0, P.y * K);
+    const stones = [];
+    for (let a = 0; a <= 12; a++) {
+      const ang = Math.PI * a / 12;
+      stones.push(box(Math.cos(ang) * 4.2, 1 + Math.sin(ang) * 4.2, 0, 1.3, 1.3, 1.3, a % 2 ? '#5e5b62' : '#7f7c84'));
+    }
+    stones.push(box(-4.2, 0.5, 0, 1.4, 1, 1.4, '#5e5b62'), box(4.2, 0.5, 0, 1.4, 1, 1.4, '#5e5b62'));
+    g.add(meshOf(boxGeometry(stones)));
+    const runes = [];
+    for (let a = 1; a < 12; a += 2) { const ang = Math.PI * a / 12; runes.push(box(Math.cos(ang) * 4.2, 1 + Math.sin(ang) * 4.2, 0.7, 0.5, 0.5, 0.1, color)); }
+    g.add(glowMesh(boxGeometry(runes)));
+    const swirl = new T.Mesh(new T.CircleGeometry(3.6, 32), new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, side: T.DoubleSide, depthWrite: false }));
+    swirl.position.set(0, 1.4, 0);
+    g.add(swirl);
+    const inner = new T.Mesh(new T.RingGeometry(0.8, 2.6, 6, 1), new T.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: T.DoubleSide, depthWrite: false }));
+    inner.position.set(0, 1.4, 0.05);
+    g.add(inner);
+    const light = new T.PointLight(color, 1.6, 40, 1.4);
+    light.position.set(0, 3, 3);
+    g.add(light);
+    scene.add(g);
+    portals.push({ g, swirl, inner, light });
+  }
+
+  /* ---------- небесные острова ---------- */
+  let skyGroup = null;
+  function addSky() {
+    const HK = World.H * K;
+    skyGroup = new T.Group();
+    const grass = new T.MeshLambertMaterial({ color: '#86c95a' });
+    const dirt = new T.MeshLambertMaterial({ color: '#8a6a44' });
+    for (const I of World.SKY_ISLANDS) {
+      const top = new T.Mesh(new T.CylinderGeometry(1, 1, 0.8, 48), grass);
+      top.scale.set(I.rx * K, 1, I.ry * K);
+      top.position.set(I.x * K, -0.39, I.y * K);
+      top.receiveShadow = true;
+      skyGroup.add(top);
+      const depth = 10 + I.rx * K * 0.25;
+      const under = new T.Mesh(new T.CylinderGeometry(1, 0.12, depth, 16, 3), dirt);
+      under.scale.set(I.rx * K * 0.98, 1, I.ry * K * 0.98);
+      under.position.set(I.x * K, -0.8 - depth / 2, I.y * K);
+      skyGroup.add(under);
+      // каменные выступы снизу
+      const r = World.rng(Math.floor(I.x));
+      const L = chunk(I.x * K, I.y * K);
+      for (let i = 0; i < 26; i++) {
+        const a = r() * Math.PI * 2, d = 0.5 + r() * 0.45, hh = 2 + r() * depth * 0.6;
+        L.push(box((I.x + Math.cos(a) * I.rx * d * 0.85) * K, -1 - hh / 2 - (1 - d) * depth * 0.3, (I.y + Math.sin(a) * I.ry * d * 0.85) * K, 2 + r() * 3, hh, 2 + r() * 3, ['#7a5a3a', '#6c6970', '#8a6a44'][i % 3]));
+      }
+    }
+    // лианы по краям островов и под мостами
+    for (const v of World.VINES) {
+      const L = chunk(v.x * K, v.y * K);
+      L.push(box(v.x * K, -0.6 - v.len / 2, v.y * K, 0.25, v.len, 0.25, v.s < 0.5 ? '#2f9e44' : '#5c940d'));
+      if (v.s < 0.35) L.push(box(v.x * K, -0.6 - v.len, v.y * K, 0.5, 0.5, 0.5, ['#ff8fab', '#ffe066', '#c77dff'][Math.floor(v.s * 9) % 3]));
+    }
+    // мосты из досок и лиан
+    for (const b of World.SKY_BRIDGES) {
+      const [ax, ay, bx, by] = b, len = Math.hypot(bx - ax, by - ay), n = Math.ceil(len / 22);
+      const ang = Math.atan2(by - ay, bx - ax);
+      const L = chunk((ax + bx) / 2 * K, (ay + by) / 2 * K);
+      for (let i = 0; i <= n; i++) {
+        const t = i / n, x = (ax + (bx - ax) * t) * K, z = (ay + (by - ay) * t) * K;
+        L.push(box(x, -0.15, z, 1.8, 0.3, World.BRIDGE_W * 2 * K, i % 2 ? '#a0754a' : '#8a5a32', { ry: -ang }));
+      }
+      for (const s of [-1, 1]) {
+        const ox = -Math.sin(ang) * World.BRIDGE_W * s, oy = Math.cos(ang) * World.BRIDGE_W * s;
+        L.push(box(((ax + bx) / 2 + ox) * K, 1.2, ((ay + by) / 2 + oy) * K, len * K, 0.2, 0.2, '#2f9e44', { ry: -ang }));
+        for (let i = 0; i <= n; i += 2) {
+          const t = i / n;
+          L.push(box((ax + (bx - ax) * t + ox) * K, 0.6, (ay + (by - ay) * t + oy) * K, 0.2, 1.2, 0.2, '#5c940d'));
+        }
+      }
+    }
+    // цветы на островах
+    for (const f of World.FLOWERS) if (f.sky) chunk(f.x * K, f.y * K).push(box(f.x * K, 0.12, f.y * K, 0.4, 0.25, 0.4, f.c));
+    // облака внизу и пропасть
+    const cl = [], cr = World.rng(321);
+    for (let i = 0; i < 240; i++) {
+      const x = (World.SKY.x - 1200 + cr() * (World.SKY.w + 2400)) * K, z = HK + 8 + cr() * (World.SKY.y + World.SKY.h - World.H + 900) * K;
+      const y = -12 - cr() * 40, w = 8 + cr() * 22, d = 5 + cr() * 12;
+      cl.push(box(x, y, z, w, 2.5 + cr() * 2, d, '#ffffff'), box(x + w * 0.2, y + 1.5, z, w * 0.55, 2.2, d * 0.7, '#f1f3f5'));
+    }
+    const cloudMesh = new T.Mesh(boxGeometry(cl), new T.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.88 }));
+    skyGroup.add(cloudMesh);
+    const abyss = new T.Mesh(new T.PlaneGeometry(9000, 4000), new T.MeshBasicMaterial({ color: '#cfe8ff' }));
+    abyss.rotation.x = -Math.PI / 2;
+    abyss.position.set(World.W * K / 2, -70, HK + 2000);
+    skyGroup.add(abyss);
+    // край земли: обрыв
+    const cliff = new T.Mesh(boxGeometry([box(World.W * K / 2, -6, HK + 0.5, World.W * K, 12, 1, '#7a5a3a'), box(World.W * K / 2, -14, HK - 1, World.W * K, 6, 1, '#6c6970')]), mat);
+    skyGroup.add(cliff);
+    scene.add(skyGroup);
   }
 
   function buildStatic() {
@@ -752,7 +971,11 @@ const Voxel = (() => {
     for (const s of [-1, 1]) bl.push(box(Bd.x * K + s * 1.6, 1.4, Bd.y * K, 0.3, 2.8, 0.3, '#6b4423'));
     bl.push(box(Bd.x * K, 2.2, Bd.y * K, 3.6, 1.8, 0.2, '#8a5a32'));
     for (let i = 0; i < 4; i++) bl.push(box(Bd.x * K - 1.2 + i * 0.8, 2.2 + (i % 2) * 0.3, Bd.y * K + 0.12, 0.6, 0.7, 0.04, '#fff9db'));
+    addMarket();
+    addSky();
     flushChunks();
+    addPortal(World.PORTAL, '#9775fa');
+    addPortal(World.SKY_PORTAL, '#9775fa');
 
     // озёра
     for (const L of World.LAKES) {
@@ -1239,9 +1462,11 @@ const Voxel = (() => {
     ground.position.set(World.W * K / 2, 0, World.H * K / 2);
     ground.receiveShadow = true;
     scene.add(ground);
-    const outside = new T.Mesh(new T.PlaneGeometry(8000, 8000), new T.MeshLambertMaterial({ color: '#2f7fb8' }));
+    // море вокруг мира — только до южного края земли, дальше — небо с облаками
+    const outH = World.H * K + 4000;
+    const outside = new T.Mesh(new T.PlaneGeometry(8000, outH), new T.MeshLambertMaterial({ color: '#2f7fb8' }));
     outside.rotation.x = -Math.PI / 2;
-    outside.position.set(World.W * K / 2, -0.05, World.H * K / 2);
+    outside.position.set(World.W * K / 2, -0.05, World.H * K - outH / 2);
     scene.add(outside);
 
     buildStatic();
@@ -1275,7 +1500,8 @@ const Voxel = (() => {
     const s = Horses.sizeOf(h);
     const lift = o.lift || 0;
     const fly = o.fly || 0;
-    e.group.position.set(x * K, lift * 2.6 * s + fly * 9 + (fly ? Math.sin(o.t * 2) * 0.4 : 0), y * K);
+    const hover = h.magic && h.magic.cloud ? 1.3 + Math.sin(o.t * 2 + (h.seed % 9)) * 0.35 : 0;
+    e.group.position.set(x * K, hover + lift * 2.6 * s + fly * 9 + (fly ? Math.sin(o.t * 2) * 0.4 : 0), y * K);
     e.group.rotation.set(0, -angle, lift * 0.25 + fly * 0.08);
     e.group.scale.setScalar(s);
     const move = Math.min(1, (h.spd || 0) / 110);
@@ -1352,6 +1578,8 @@ const Voxel = (() => {
       hemi.intensity *= 1 - 0.25 * wet;
       sky.lerp(new T.Color('#7d8794'), wet * 0.6);
     }
+    const inSky = p.y > World.H - 150;
+    if (inSky) sky.lerp(new T.Color('#bfe6ff'), 0.55 * dl + 0.1);
     scene.background = sky;
     scene.fog.color = sky;
     scene.fog.near = inCave ? 60 : 150; scene.fog.far = inCave ? 160 : 320;
@@ -1387,6 +1615,14 @@ const Voxel = (() => {
     cam.fly += ((p.fly ? 1 : 0) - cam.fly) * 0.06;
     if (m) syncHorse(m, p.x, p.y, p.angle, { t, rider: game.rider(), lift: game.riderLift(), fly: cam.fly });
     for (const r of (game.rivals ? game.rivals() : [])) if (close(r.h)) syncHorse(r.h, r.h.x, r.h.y, r.h.angle, { t, rider: r.rider });
+    if (World.inRect(p.x, p.y, World.MARKET, 700)) for (const h of Market.stockHorses()) syncHorse(h, h.x, h.y, h.angle, { t });
+    // порталы: вихрь крутится и мерцает
+    for (const P of portals) {
+      P.swirl.material.opacity = 0.55 + Math.sin(t * 3) * 0.15;
+      P.inner.rotation.z = t * 2;
+      P.swirl.material.color.setHSL((0.72 + Math.sin(t * 0.7) * 0.06) % 1, 0.8, 0.6);
+      P.light.intensity = 1.3 + Math.sin(t * 4) * 0.4;
+    }
     for (const [id, e] of objs) if (!e.seen) { disposeObj(e); objs.delete(id); }
     syncGirl(p, t, !m);
 

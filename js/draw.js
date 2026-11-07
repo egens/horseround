@@ -83,6 +83,15 @@ const Draw = (() => {
     // деревенская площадь
     g.fillStyle = '#cbb48a';
     g.beginPath(); ell(g, 2650, 2920, 330, 190); g.fill();
+    // рынок: брусчатка
+    area(World.MARKET, '#c9b48a', ['#b9a378', '#d8c49a', '#a99168'], 3000);
+    if (detail) {
+      g.strokeStyle = 'rgba(120,95,60,0.25)'; g.lineWidth = 2;
+      for (let x = World.MARKET.x; x <= World.MARKET.x + World.MARKET.w; x += 24) { g.beginPath(); g.moveTo(x, World.MARKET.y); g.lineTo(x, World.MARKET.y + World.MARKET.h); g.stroke(); }
+      for (let y = World.MARKET.y; y <= World.MARKET.y + World.MARKET.h; y += 24) { g.beginPath(); g.moveTo(World.MARKET.x, y); g.lineTo(World.MARKET.x + World.MARKET.w, y); g.stroke(); }
+    }
+    // портал в пещере: светящийся круг на полу
+    g.fillStyle = 'rgba(151,117,250,0.45)'; g.beginPath(); ell(g, World.PORTAL.x, World.PORTAL.y + 20, 110, 70); g.fill();
     // дороги
     g.lineCap = 'round'; g.lineJoin = 'round';
     for (const [w, c] of [[56, '#b8986a'], [46, '#cdb07c']]) {
@@ -138,6 +147,7 @@ const Draw = (() => {
       g.fillStyle = '#6b4a2b';
       for (const hh of World.HOUSES) g.fillRect(hh.x, hh.y, hh.w, hh.h);
     }
+    if (S.player.y > World.H) return skyMinimap(mctx, S, game);
     mctx.drawImage(mmBg, 0, 0);
     for (const b of S.builds || []) { const r = Farm.rectOf(b); mctx.fillStyle = '#a0522d'; mctx.fillRect(r.x * k, r.y * k, Math.max(2, r.w * k), Math.max(2, r.h * k)); }
     for (const w of game.wild()) {
@@ -162,6 +172,26 @@ const Draw = (() => {
     const v = game.view();
     mctx.strokeStyle = 'rgba(255,255,255,0.8)';
     mctx.strokeRect(v.x * k, v.y * k, v.w * k, v.h * k);
+  }
+
+  // на небесных островах миникарта показывает только небо
+  function skyMinimap(mctx, S, game) {
+    const c = mctx.canvas, Z = World.SKY, k = Math.min(c.width / Z.w, c.height / Z.h);
+    const ox = (c.width - Z.w * k) / 2, oy = (c.height - Z.h * k) / 2;
+    const X = x => ox + (x - Z.x) * k, Y = y => oy + (y - Z.y) * k;
+    mctx.fillStyle = '#bfe3ff'; mctx.fillRect(0, 0, c.width, c.height);
+    mctx.strokeStyle = '#a0754a'; mctx.lineWidth = Math.max(2, World.BRIDGE_W * 2 * k);
+    for (const b of World.SKY_BRIDGES) { mctx.beginPath(); mctx.moveTo(X(b[0]), Y(b[1])); mctx.lineTo(X(b[2]), Y(b[3])); mctx.stroke(); }
+    for (const I of World.SKY_ISLANDS) { fillEll(mctx, X(I.x), Y(I.y), I.rx * k, I.ry * k, '#86c95a'); }
+    fillEll(mctx, X(World.SKY_PORTAL.x), Y(World.SKY_PORTAL.y), 4, 4, '#9775fa');
+    for (const w of game.wild()) {
+      if (w.y < World.H) continue;
+      mctx.fillStyle = Horses.pheno(w).body;
+      mctx.beginPath(); mctx.arc(X(w.x), Y(w.y), 2, 0, TAU); mctx.fill();
+    }
+    const p = S.player;
+    mctx.fillStyle = '#ff2d75'; mctx.strokeStyle = '#fff'; mctx.lineWidth = 1.5;
+    mctx.beginPath(); mctx.arc(X(p.x), Y(p.y), 4, 0, TAU); mctx.fill(); mctx.stroke();
   }
 
   return { label, fillEll, worldGround, minimap };

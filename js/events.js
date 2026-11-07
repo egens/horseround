@@ -47,7 +47,7 @@ const Events = (() => {
   function start(kind) {
     if (kind === 'rain') {
       rain = { t: rand(45, 90) };
-      UI.toast('🌧️ Пошёл дождь! Лошади в леваде пачкаются быстрее.');
+      UI.toast('🌧️ Пошёл дождь! У лошадей пачкаются ноги — у всех, кроме тех, что стоят в конюшне.');
     } else if (kind === 'bunnies') {
       spawnBunnies(3 + Math.floor(Math.random() * 3));
       UI.toast('🐰 На лугу появились зайчики! Поймай зайчика — он принесёт подарок.');
@@ -425,7 +425,7 @@ const Events = (() => {
     }
     if (wet <= 0.01) return;
     const reg = World.regionAt(G.S.player.x, G.S.player.y);
-    if (reg === 'desert' || reg === 'cave') return;          // в пустыне и в пещере дождя нет
+    if (reg === 'desert' || reg === 'cave' || reg.startsWith('sky')) return;  // в пустыне, пещере и над облаками дождя нет
     if (reg === 'tundra') {                                   // в тундре вместо дождя — снег
       const n = Math.floor(180 * wet * (w * h) / (1280 * 800));
       while (drops.length < n) drops.push({ x: Math.random() * w, y: Math.random() * h, s: 0.7 + Math.random() * 0.6 });

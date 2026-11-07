@@ -126,6 +126,55 @@ const World = (() => {
     I.area = { x: I.x - I.rx + 150, y: I.y - I.ry + 150, w: I.rx * 2 - 300, h: I.ry * 2 - 300 };
   }
   const PIER = { x: 9560, y: 4700, name: 'Пристань' };                        // причал на большой земле
+
+  // Рынок в деревне: торговцы лошадьми, тренер, обменщик и своя стойка
+  const MARKET = { x: 2860, y: 3020, w: 640, h: 360 };
+  const MARKET_STALLS = [
+    { id: 'horses', name: '🐎 Конский торговец', roof: '#d63a3a' },
+    { id: 'trainer', name: '💪 Тренер', roof: '#2e86de' },
+    { id: 'swap', name: '🔁 Обменщик', roof: '#8e44ad' },
+    { id: 'mine', name: '🏷️ Моя стойка', roof: '#f39c12' },
+  ].map((st, i) => Object.assign(st, { x: MARKET.x + 30 + i * 155, y: MARKET.y + 40, w: 120, h: 36 }));
+  // точка перед прилавком, где стоит игрок
+  const stallFront = st => ({ x: st.x + st.w / 2, y: st.y + st.h + 55 });
+
+  // Портал в глубине пещеры — ведёт на небесные острова
+  const PORTAL = { x: 8900, y: 2050, r: 55 };
+
+  /* ---------- небесные острова: за южным краем земли, над облаками ---------- */
+  const SKY = { x: 600, y: 10000, w: 8600, h: 2500 };
+  const TOTAL_H = SKY.y + SKY.h + 200;
+  const SKY_ISLANDS = [
+    { id: 'sky1', name: 'Облачный остров', x: 4800, y: 11150, rx: 1100, ry: 640 },
+    { id: 'sky2', name: 'Радужный остров', x: 2150, y: 10850, rx: 720, ry: 480 },
+    { id: 'sky3', name: 'Солнечный остров', x: 7450, y: 10850, rx: 720, ry: 480 },
+    { id: 'sky4', name: 'Лиановый островок', x: 3300, y: 12050, rx: 430, ry: 300 },
+    { id: 'sky5', name: 'Звёздный островок', x: 6350, y: 12080, rx: 430, ry: 300 },
+  ];
+  for (const I of SKY_ISLANDS) I.area = { x: I.x - I.rx + 140, y: I.y - I.ry + 120, w: I.rx * 2 - 280, h: I.ry * 2 - 240 };
+  // мосты из лиан между островами: отрезки шириной 2*BRIDGE_W
+  const BRIDGE_W = 42;
+  const SKY_BRIDGES = [
+    [3720, 11000, 2850, 10900], [5880, 11000, 6750, 10900],
+    [4150, 11650, 3550, 11850], [5450, 11650, 6100, 11880],
+  ];
+  const SKY_PORTAL = { x: 4800, y: 10900, r: 55 };
+  function skyIslandAt(x, y, m = 0) {
+    for (const I of SKY_ISLANDS) {
+      const dx = (x - I.x) / (I.rx - m), dy = (y - I.y) / (I.ry - m);
+      if (dx * dx + dy * dy < 1) return I;
+    }
+    return null;
+  }
+  function segPoint(x, y, b) {
+    const [ax, ay, bx, by] = b, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2));
+    return { x: ax + dx * t, y: ay + dy * t };
+  }
+  const onBridge = (x, y, m = 0) => SKY_BRIDGES.some(b => { const q = segPoint(x, y, b); return Math.hypot(q.x - x, q.y - y) < BRIDGE_W - m; });
+  const inSkyZone = y => y > H;
+  // можно ли стоять в небе (на острове или мосту)
+  const skyWalkable = (x, y, m = 0) => !!skyIslandAt(x, y, m) || onBridge(x, y, m);
   function islandAt(x, y, m = 0) {
     for (const I of ISLANDS) {
       const dx = (x - I.x) / (I.rx - m), dy = (y - I.y) / (I.ry - m);
@@ -207,6 +256,8 @@ const World = (() => {
   }
   const inForest = (x, y) => FOREST.some(f => inRect(x, y, f));
   function regionAt(x, y) {
+    if (y > H) { const SI = skyIslandAt(x, y); return SI ? SI.id : 'sky'; }
+    if (inRect(x, y, MARKET)) return 'market';
     const I = islandAt(x, y);
     if (I) return I.id;
     if (x > SEA.x) return 'sea';
@@ -228,11 +279,13 @@ const World = (() => {
     farmland: 'Поля и огороды', mushroom: 'Грибное королевство', mountain: 'Горы', cave: 'Пещера',
     desert: 'Пустыня', deepforest: 'Дремучий лес', tundra: 'Тундра', sea: 'Море',
     i1: ISLANDS[0].name, i2: ISLANDS[1].name, i3: ISLANDS[2].name,
+    market: 'Рынок', sky: 'Небо', sky1: SKY_ISLANDS[0].name, sky2: SKY_ISLANDS[1].name, sky3: SKY_ISLANDS[2].name,
+    sky4: SKY_ISLANDS[3].name, sky5: SKY_ISLANDS[4].name,
   };
 
   // деревья, грибы, камни, цветы
   // kind: oak, birch, pine (сосна), spruce (ель), amanita/boletus/glowshroom (большие грибы), rock, crystal
-  const TREES = [], FLOWERS = [], SHROOMS = [], CRYSTALS = [];
+  const TREES = [], FLOWERS = [], SHROOMS = [], CRYSTALS = [], VINES = [];
   const houseBusy = (x, y, m) => HOUSES.some(hh => inRect(x, y, hh, m)) || Math.hypot(x - WELL.x, y - WELL.y) < m + 30;
   (function decorate() {
     const r = rng(42);
@@ -306,7 +359,7 @@ const World = (() => {
     // пещера: валуны и светящиеся кристаллы
     for (let i = 0; i < 70; i++) {
       const x = CAVE.x + 100 + r() * (CAVE.w - 200), y = CAVE.y + 100 + r() * (CAVE.h - 200);
-      if (Math.hypot(x - CHEST.x, y - CHEST.y) < 200 || Math.abs(y - (CAVE_GATE.y1 + CAVE_GATE.y2) / 2) < 120 && x < CAVE.x + 400) continue;
+      if (Math.hypot(x - CHEST.x, y - CHEST.y) < 200 || Math.hypot(x - PORTAL.x, y - PORTAL.y) < 260 || Math.abs(y - (CAVE_GATE.y1 + CAVE_GATE.y2) / 2) < 120 && x < CAVE.x + 400) continue;
       if (CAVE_INNER_WALLS.some(w => inRect(x, y, w, 60)) || !free(x, y, 160)) continue;
       add({ x, y, r: 30 + r() * 40, kind: 'rock', s: Math.floor(r() * 1e6), cr: 26 });
     }
@@ -355,7 +408,29 @@ const World = (() => {
       }
     }
 
+    // небесные острова: деревья, обвитые лианами, и лианы по краям
+    for (const I of SKY_ISLANDS) {
+      for (let i = 0; i < 90; i++) {
+        const a = r() * Math.PI * 2, d = 0.25 + Math.sqrt(r()) * 0.6;
+        const x = I.x + Math.cos(a) * I.rx * d, y = I.y + Math.sin(a) * I.ry * d;
+        if (Math.hypot(x - SKY_PORTAL.x, y - SKY_PORTAL.y) < 220 || onBridge(x, y, -120) || !free(x, y, 190)) continue;
+        add({ x, y, r: 32 + r() * 22, kind: r() < 0.5 ? 'vinetree' : r() < 0.5 ? 'birch' : 'oak', s: Math.floor(r() * 1e6), cr: 9 });
+      }
+      const n = Math.round((I.rx + I.ry) / 28);
+      for (let k = 0; k < n; k++) {
+        const a = k / n * Math.PI * 2 + r() * 0.1;
+        VINES.push({ x: I.x + Math.cos(a) * I.rx * 0.98, y: I.y + Math.sin(a) * I.ry * 0.98, len: 3 + r() * 14, s: r() });
+      }
+    }
+    for (const b of SKY_BRIDGES) for (let t = 0.1; t < 0.95; t += 0.12) {
+      VINES.push({ x: b[0] + (b[2] - b[0]) * t, y: b[1] + (b[3] - b[1]) * t + BRIDGE_W, len: 2 + r() * 6, s: r() });
+    }
+
     const cols = ['#ffffff', '#ffe066', '#ff8fab', '#c77dff', '#ffd6a5', '#f94144'];
+    for (const I of SKY_ISLANDS) for (let i = 0; i < 260; i++) {
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 0.92;
+      FLOWERS.push({ x: I.x + Math.cos(a) * I.rx * d, y: I.y + Math.sin(a) * I.ry * d, c: cols[Math.floor(r() * cols.length)], s: 1.5 + r() * 2, sky: true });
+    }
     for (let i = 0; i < 9000; i++) {
       const x = r() * W, y = r() * H;
       if (busy(x, y) || inRect(x, y, MOUNTAIN) || houseBusy(x, y, 10) || inRect(x, y, DESERT) || inRect(x, y, TUNDRA) || inSea(x, y)) continue;
@@ -404,6 +479,7 @@ const World = (() => {
     for (const w of CAVE_WALLS) SOLIDS.push(Object.assign({ rock: true }, w));
     for (const w of CAVE_INNER_WALLS) SOLIDS.push(Object.assign({ rock: true }, w));
     for (const hh of HOUSES) SOLIDS.push({ x: hh.x, y: hh.y, w: hh.w, h: hh.h });
+    for (const st of MARKET_STALLS) SOLIDS.push({ x: st.x, y: st.y, w: st.w, h: st.h });
     for (const I of ISLANDS) {
       const st = I.stable, t2 = 10;
       SOLIDS.push({ x: st.x, y: st.y, w: st.w, h: t2 }, { x: st.x, y: st.y, w: t2, h: st.h }, { x: st.x + st.w - t2, y: st.y, w: t2, h: st.h });
@@ -488,6 +564,30 @@ const World = (() => {
         else e.x = Math.min(e.x, SEA.x - r);
       }
     }
+    // небо: на островах и мостах можно ходить, вокруг — пропасть
+    if (e.y > H - r) {
+      if (!skyWalkable(e.x, e.y, r * 0.5)) {
+        let best = null, bd = 1e9;
+        for (const I of SKY_ISLANDS) {
+          const rx = I.rx - r, ry = I.ry - r, d = Math.hypot((e.x - I.x) / rx, (e.y - I.y) / ry) || 1;
+          const q = { x: I.x + (e.x - I.x) / d * 0.995, y: I.y + (e.y - I.y) / d * 0.995 };
+          const dd = Math.hypot(q.x - e.x, q.y - e.y);
+          if (dd < bd) { bd = dd; best = q; }
+        }
+        for (const b of SKY_BRIDGES) {
+          const q = segPoint(e.x, e.y, b), dd = Math.hypot(q.x - e.x, q.y - e.y);
+          const lim = BRIDGE_W - r * 0.5 - 1;
+          const p = dd > lim ? { x: q.x + (e.x - q.x) / dd * lim, y: q.y + (e.y - q.y) / dd * lim } : { x: e.x, y: e.y };
+          const pd = Math.hypot(p.x - e.x, p.y - e.y);
+          if (pd < bd) { bd = pd; best = p; }
+        }
+        if (bd < 320) { e.x = best.x; e.y = best.y; }
+        else e.y = H - r;
+      }
+      e.x = Math.max(r, Math.min(W - r, e.x));
+      e.y = Math.min(TOTAL_H - r, e.y);
+      return;
+    }
     const dw = Math.hypot(e.x - WELL.x, e.y - WELL.y);
     if (dw < WELL.r + r && dw > 0) { e.x = WELL.x + (e.x - WELL.x) / dw * (WELL.r + r); e.y = WELL.y + (e.y - WELL.y) / dw * (WELL.r + r); }
     e.x = Math.max(r, Math.min(W - r, e.x));
@@ -495,6 +595,7 @@ const World = (() => {
   }
   // можно ли здесь стоять (для приземления пегаса и стройки)
   function blocked(x, y, r = 14) {
+    if (y > H - r && !skyWalkable(x, y, r)) return true;
     if (inPond(x, y, r) || inSea(x, y, r)) return true;
     const box = { x: x - r, y: y - r, w: 2 * r, h: 2 * r };
     const hit = s => box.x < s.x + s.w && box.x + box.w > s.x && box.y < s.y + s.h && box.y + box.h > s.y;
@@ -506,6 +607,8 @@ const World = (() => {
     W, H, STABLE, STALL_W, STALL_H, AISLE_Y1, AISLE_Y2, stallRect, stallSpot,
     ARENA, GATE_A, LETTERS, letterTarget, CAV, JUMPF, JUMPF_GATE, COURSE, LAMPS, PADDOCK, PADDOCK_GATE, SELL, SHOP, FIELD, POND,
     LAKELAND, FARMLAND, VILLAGE, FOREST, MUSHROOM, MOUNTAIN, CAVE, CAVE_GATE, CAVE_WALLS, CAVE_INNER_WALLS, CHEST, LAKES, ROADS,
+    MARKET, MARKET_STALLS, stallFront, PORTAL, SKY, TOTAL_H, SKY_ISLANDS, SKY_BRIDGES, BRIDGE_W, SKY_PORTAL, VINES,
+    skyIslandAt, skyWalkable, onBridge, inSkyZone,
     HOUSES, WELL, BOARD, REGION_NAMES, DESERT, DEEPFOREST, TUNDRA, SEA, ISLANDS, PIER, islandAt, inSea,
     TREES, FLOWERS, SHROOMS, CRYSTALS, SOLIDS, BUILD_SOLIDS, collide, blocked, inRect, inPond, lakeAt, regionAt, inForest, distToRoad, treesNear, rng,
   };

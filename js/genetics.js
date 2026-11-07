@@ -91,14 +91,66 @@ const Genetics = (() => {
       stats: { speed: [70, 92], jump: [60, 85], dressage: [80, 98], stamina: [75, 95] },
     },
     firehorse: {
-      name: 'Огненная лошадка', weight: 0, home: 'magic', hw: 1, size: 0.97, temper: 0.85, magic: { mane: 'fire' },
+      name: 'Огненная лошадка', weight: 0, home: 'magic', hw: 1, size: 0.97, temper: 0.85, magic: { mane: 'fire', elem: 'fire' },
       freq: { E: 0.35, A: 0.4, F: 0.5 },
       stats: { speed: [85, 99], jump: [60, 85], dressage: [50, 75], stamina: [80, 98] },
     },
     icehorse: {
-      name: 'Ледяная лошадка', weight: 0, home: 'magic', hw: 1, size: 0.97, temper: 0.6, magic: { mane: 'ice' },
+      name: 'Ледяная лошадка', weight: 0, home: 'magic', hw: 1, size: 0.97, temper: 0.6, magic: { mane: 'ice', elem: 'ice' },
       freq: { E: 0.85, A: 0.2, G: 0.45, Z: 0.45, Cr: 0.15 },
       stats: { speed: [70, 90], jump: [65, 90], dressage: [70, 92], stamina: [85, 99] },
+    },
+    // стихийные лошадки: окрас задаёт волшебство, а не гены
+    crystalhorse: {
+      name: 'Кристальная лошадка', weight: 0, home: 'magic', hw: 0.8, size: 0.95, temper: 0.6, magic: { elem: 'crystal' }, sheen: true,
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [70, 92], jump: [70, 95], dressage: [75, 98], stamina: [65, 88] },
+    },
+    waterhorse: {
+      name: 'Водяная лошадка', weight: 0, home: 'magic', hw: 0.7, size: 0.98, temper: 0.45, magic: { elem: 'water' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [70, 90], jump: [55, 80], dressage: [75, 95], stamina: [80, 99] },
+    },
+    rainbowhorse: {
+      name: 'Радужная лошадка', weight: 0, home: 'magic', hw: 0.5, size: 0.95, temper: 0.55, magic: { elem: 'rainbow' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [75, 95], jump: [70, 95], dressage: [75, 95], stamina: [70, 92] },
+    },
+    sunhorse: {
+      name: 'Солнечная лошадка', weight: 0, home: 'magic', hw: 0.7, size: 1.0, temper: 0.7, magic: { elem: 'sun' },
+      freq: { E: 0.3, A: 0.5 },
+      stats: { speed: [80, 98], jump: [60, 85], dressage: [60, 85], stamina: [80, 98] },
+    },
+    mushroomhorse: {
+      name: 'Грибная лошадка', weight: 0, home: 'magic', hw: 0.9, size: 0.9, temper: 0.3, magic: { elem: 'mushroom' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [50, 72], jump: [55, 80], dressage: [65, 88], stamina: [75, 95] },
+    },
+    sandhorse: {
+      name: 'Песочная лошадка', weight: 0, home: 'desert', hw: 1, size: 0.95, temper: 0.6, magic: { elem: 'sand' },
+      freq: { E: 0.4, A: 0.6 },
+      stats: { speed: [75, 95], jump: [55, 78], dressage: [50, 75], stamina: [85, 100] },
+    },
+    stonehorse: {
+      name: 'Каменная лошадка', weight: 0, home: 'cave', hw: 0.7, size: 1.08, temper: 0.25, magic: { elem: 'stone' },
+      freq: { E: 0.6, A: 0.4 },
+      stats: { speed: [40, 62], jump: [45, 68], dressage: [50, 72], stamina: [90, 100] },
+    },
+    leafhorse: {
+      name: 'Лиственная лошадка', weight: 0, home: 'forest', hw: 1, size: 0.96, temper: 0.5, magic: { elem: 'leaf' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [65, 88], jump: [70, 92], dressage: [60, 85], stamina: [70, 90] },
+    },
+    damphorse: {
+      name: 'Сырая лошадка', weight: 0, home: 'forest', hw: 1, size: 0.97, temper: 0.35, magic: { elem: 'damp' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [55, 78], jump: [50, 75], dressage: [70, 92], stamina: [80, 98] },
+    },
+    // облачная лошадка летает на облачках под копытами — живёт на небесных островах
+    cloudhorse: {
+      name: 'Облачная лошадка', weight: 0, home: 'sky', hw: 1, size: 0.93, temper: 0.55, magic: { cloud: true },
+      freq: { E: 0.5, A: 0.5, G: 0.8, Cr: 0.2 },
+      stats: { speed: [75, 95], jump: [70, 95], dressage: [70, 92], stamina: [70, 92] },
     },
     skeleton: {
       name: 'Лошадь-скелет', weight: 0, home: 'cave', hw: 1, size: 1.0, temper: 0.55, magic: { skeleton: true },
