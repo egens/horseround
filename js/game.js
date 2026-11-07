@@ -2,7 +2,6 @@
 /* Основная логика игры */
 const Game = (() => {
   const SAVE_KEY = 'horseFarm.v1';
-  const MAX_STALLS = 20;
   const WILD_COUNT = 9;
   const GAITS = ['Шаг', 'Рысь', 'Галоп'];
   const LASSO_RANGE = 170;
@@ -23,6 +22,7 @@ const Game = (() => {
     pad: { name: 'Вальтрап', icon: '🟥', price: 30, desc: 'Цветная подкладка под седло', colors: true },
     helmet: { name: 'Шлем', icon: '⛑️', price: 40, desc: 'Безопасность прежде всего!', colors: true },
     boots: { name: 'Ногавки', icon: '🧦', price: 35, desc: 'Защищают ноги лошади', colors: true },
+    detector: { name: 'Металлоискатель', icon: '📡', price: 150, desc: 'Пищит рядом с кладом. Включай клавишей M' },
   };
   const TESTS = {
     easy: {
@@ -69,9 +69,8 @@ const Game = (() => {
   let lasso = null;          // мини-игра с лассо
   let time = 0, saveT = 0, respawnT = 0, fullWarnT = 0, lassoCd = 0;
   let floats = [];
-  const herd = { x: 2700, y: 900, tx: 2700, ty: 900, t: 0, panic: 0 };
   const keys = new Set();
-  let canvas, ctx, mmctx, dpr = 1, zoom = 1, viewW = 0, viewH = 0;
+  let canvas, ctx, mmctx, dpr = 1, viewW = 0, viewH = 0;
   const cam = { x: 0, y: 0 };
   let pointerDown = false;
 
@@ -89,15 +88,15 @@ const Game = (() => {
   function newState() {
     return {
       money: 300,
-      inv: { hay: 6, oats: 0, carrot: 3, apple: 2, sugar: 0 },
-      tack: { saddle: false, bridle: false, brush: false, goodLasso: false, pad: null, helmet: null, boots: null },
+      inv: Object.assign(Object.fromEntries(Object.keys(Items.ITEMS).map(k => [k, 0])), { hay: 6, carrot: 3, apple: 2, seed_carrot: 2 }),
+      tack: { saddle: false, bridle: false, brush: false, goodLasso: false, detector: false, pad: null, helmet: null, boots: null },
       horses: [],
       player: { x: 960, y: 470, angle: 0, gait: 0, mountId: null, shirt: '#e05a8a' },
       stats: { caught: 0, foals: 0, sold: 0, gold: 0, silver: 0, bronze: 0, bunnies: 0, races: 0, wins: 0 },
       nextId: 1,
       seenHelp: false,
       clock: 8 * 60,   // минуты от полуночи
-      gfx: '2d',       // '2d' или 'voxel'
+      builds: [], flags: {}, quests: {}, board: null, buildId: 0, bigTreasure: null,
     };
   }
 
@@ -120,6 +119,9 @@ const Game = (() => {
     s.stats = Object.assign(newState().stats, data.stats);
     s.player = Object.assign(newState().player, data.player);
     s.player.mountId = null;
+    s.player.fly = false;
+    s.player.detector = false;
+    s.builds = data.builds || []; s.flags = data.flags || {}; s.quests = data.quests || {};
     for (const h of s.horses) if (h.state === 'ridden' || h.state === 'led') h.state = 'stall';
     Horses.nextId = Math.max(s.nextId || 1, ...s.horses.map(h => h.id + 1), 1);
     return s;
@@ -132,6 +134,7 @@ const Game = (() => {
     wild = []; led = null; ex = null;
     Horses.nextId = 1;
     spawnHerd();
+    Farm.syncSolids();
     UI.closeModal();
     UI.toast('Новая игра! Поймай свою первую лошадь в поле →');
   }
@@ -141,14 +144,16 @@ const Game = (() => {
   const byId = id => S.horses.find(h => h.id === id);
   function freeStall() {
     const used = new Set(S.horses.map(h => h.stall));
-    for (let i = 0; i < MAX_STALLS; i++) if (!used.has(i)) return i;
+    for (let i = 0; i < Farm.maxStalls(); i++) if (!used.has(i)) return i;
     return -1;
   }
   const horseInStall = i => S.horses.find(h => h.stall === i) || null;
   const atFarm = () => {
     const p = S.player;
-    return World.inRect(p.x, p.y, World.STABLE, 40) || World.inRect(p.x, p.y, World.PADDOCK, 50);
+    return World.inRect(p.x, p.y, World.STABLE, 40) || World.inRect(p.x, p.y, World.PADDOCK, 50) || Farm.nearStable(p);
   };
+  const stallSpot = i => (i < 20 ? World.stallSpot(i) : Farm.extraSpot(i) || World.stallSpot(0));
+  function stat(k, n = 1) { S.stats[k] = (S.stats[k] || 0) + n; }
   function float(text, x, y, color = '#333') { floats.push({ text, x, y, t: 0, color }); }
 
   function gaitSpeed(h, gait) {
@@ -159,38 +164,54 @@ const Game = (() => {
     return v;
   }
 
-  /* ---------------- табун ---------------- */
-  function randomFieldPoint(margin = 150) {
-    const F = World.FIELD;
-    for (let i = 0; i < 50; i++) {
+  /* ---------------- табуны ---------------- */
+  // три табуна: обычные лошади в поле, волшебные в Грибном королевстве, скелеты в пещере
+  const HERDS = {
+    field: { area: World.FIELD, count: WILD_COUNT, sleeps: true, name: 'в поле' },
+    magic: { area: { x: World.MUSHROOM.x + 150, y: World.MUSHROOM.y + 150, w: World.MUSHROOM.w - 300, h: World.MUSHROOM.h - 300 }, count: 6, sleeps: true, name: 'в Грибном королевстве' },
+    cave: { area: { x: World.CAVE.x + 100, y: World.CAVE.y + 100, w: World.CAVE.w - 200, h: World.CAVE.h - 200 }, count: 4, sleeps: false, name: 'в пещере' },
+  };
+  for (const k in HERDS) Object.assign(HERDS[k], { id: k, x: 0, y: 0, tx: 0, ty: 0, t: 0, panic: 0, respawnT: 0 });
+
+  function randomFieldPoint(margin = 150, area = World.FIELD) {
+    const F = area;
+    for (let i = 0; i < 60; i++) {
       const x = rand(F.x + margin, F.x + F.w - margin), y = rand(F.y + margin, F.y + F.h - margin);
-      if (!World.inPond(x, y, 150)) return { x, y };
+      if (!World.inPond(x, y, 150) && !World.blocked(x, y, 40)) return { x, y };
     }
-    return { x: F.x + F.w / 2, y: F.y + 400 };
+    return { x: F.x + F.w / 2, y: F.y + F.h / 2 };
   }
 
-  function pickBreed() {
-    const entries = Object.entries(Genetics.BREEDS).filter(([, b]) => b.weight > 0);
-    let total = entries.reduce((s, [, b]) => s + b.weight, 0), r = Math.random() * total;
-    for (const [k, b] of entries) { r -= b.weight; if (r <= 0) return k; }
+  function pickBreed(home = 'field') {
+    const entries = Object.entries(Genetics.BREEDS).filter(([, b]) => (home === 'field' ? b.weight > 0 : b.home === home));
+    let total = entries.reduce((s, [, b]) => s + (home === 'field' ? b.weight : b.hw), 0), r = Math.random() * total;
+    for (const [k, b] of entries) { r -= home === 'field' ? b.weight : b.hw; if (r <= 0) return k; }
     return entries[0][0];
   }
 
-  function makeWild(x, y) {
-    const isFoal = Math.random() < 0.12;
+  function makeWild(x, y, home = 'field') {
+    const isFoal = Math.random() < (home === 'cave' ? 0.05 : 0.12);
     const taken = S.horses.map(h => h.name).concat(wild.map(w => w.name));
-    const h = Horses.create({ breed: pickBreed(), age: isFoal ? rand(0.3, 1.5) : rand(3, 13), taken });
+    const h = Horses.create({ breed: pickBreed(home), age: isFoal ? rand(0.3, 1.5) : rand(3, 13), taken });
+    // в Грибном королевстве иногда встречаются обычные лошади с одной волшебной чертой
+    if (home === 'magic' && Math.random() < 0.15) h.magic = Object.assign({}, h.magic, Math.random() < 0.5 ? { horn: true } : { wings: true });
     h.x = x; h.y = y; h.angle = rand(0, 6.28);
     h.slot = { x: rand(-150, 150), y: rand(-110, 110) };
-    h.flee = 0; h.grazeT = rand(0, 5);
+    h.flee = 0; h.grazeT = rand(0, 5); h.home = home;
     return h;
   }
 
   function spawnHerd() {
-    const c = randomFieldPoint(400);
-    herd.x = herd.tx = c.x; herd.y = herd.ty = c.y;
     wild = [];
-    for (let i = 0; i < WILD_COUNT; i++) wild.push(makeWild(c.x + rand(-150, 150), c.y + rand(-120, 120)));
+    for (const H of Object.values(HERDS)) {
+      const c = randomFieldPoint(400, H.area);
+      H.x = H.tx = c.x; H.y = H.ty = c.y;
+      for (let i = 0; i < H.count; i++) {
+        const q = { x: c.x + rand(-150, 150), y: c.y + rand(-120, 120) };
+        World.collide(q, 20);
+        wild.push(makeWild(q.x, q.y, H.id));
+      }
+    }
   }
 
   function moveToward(h, tx, ty, speed, dt, accel = 3) {
@@ -209,83 +230,87 @@ const Game = (() => {
 
   function updateHerd(dt) {
     const p = S.player, m = mounted();
-    const F = World.FIELD;
-    herd.t -= dt;
-    herd.panic = Math.max(0, herd.panic - dt);
-    if (herd.t <= 0) {
-      const t = randomFieldPoint(300);
-      herd.tx = t.x; herd.ty = t.y; herd.t = rand(14, 26);
-    }
-    const sleepy = isNight() && herd.panic <= 0;
-    const hs = herd.panic > 0 ? 120 : sleepy ? 0 : 20;
-    const hd = Math.hypot(herd.tx - herd.x, herd.ty - herd.y);
-    if (hd > 5) { herd.x += ((herd.tx - herd.x) / hd) * hs * dt; herd.y += ((herd.ty - herd.y) / hd) * hs * dt; }
-
-    for (const w of wild) {
-      const d = dist(w, p);
-      let fleeR = 70 + w.temper * 170;
-      if (sleepy) fleeR *= 0.6;
-      if (m && p.gait === 2) fleeR *= 1.2;
-      if (m && p.gait === 0) fleeR *= 0.8;
-      if (d < fleeR && w.flee <= 0) {
-        w.flee = rand(1.4, 2.2);
-        if (herd.panic <= 0) {
-          const ax = herd.x - p.x, ay = herd.y - p.y, al = Math.hypot(ax, ay) || 1;
-          herd.tx = clamp(herd.x + (ax / al) * 600, F.x + 250, F.x + F.w - 250);
-          herd.ty = clamp(herd.y + (ay / al) * 600, F.y + 250, F.y + F.h - 250);
-          herd.t = rand(8, 14);
-        }
-        herd.panic = 2.5;
+    for (const herd of Object.values(HERDS)) {
+      const F = herd.area;
+      herd.t -= dt;
+      herd.panic = Math.max(0, herd.panic - dt);
+      if (herd.t <= 0) {
+        const t = randomFieldPoint(300, F);
+        herd.tx = t.x; herd.ty = t.y; herd.t = rand(14, 26);
       }
-      let tx, ty, sp;
-      if (w.flee > 0) {
-        w.flee -= dt;
-        const ax = w.x - p.x, ay = w.y - p.y, al = Math.hypot(ax, ay) || 1;
-        tx = w.x + (ax / al) * 100 + (herd.x - w.x) * 0.15;
-        ty = w.y + (ay / al) * 100 + (herd.y - w.y) * 0.15;
-        sp = (170 + Horses.skill(w, 'speed') * 0.8) * (w.age < 3 ? 0.8 : 1);
-        w.headTurn = 0;
-      } else {
-        const gx = herd.x + w.slot.x, gy = herd.y + w.slot.y;
-        const gd = Math.hypot(gx - w.x, gy - w.y);
-        if (gd > 60) {
-          tx = gx; ty = gy;
-          sp = herd.panic > 0 ? 190 : gd > 300 ? 150 : gd > 150 ? 80 : 40;
+      const sleepy = herd.sleeps && isNight() && herd.panic <= 0;
+      const hs = herd.panic > 0 ? 120 : sleepy ? 0 : 20;
+      const hd = Math.hypot(herd.tx - herd.x, herd.ty - herd.y);
+      if (hd > 5) { herd.x += ((herd.tx - herd.x) / hd) * hs * dt; herd.y += ((herd.ty - herd.y) / hd) * hs * dt; }
+
+      const members = wild.filter(w => (w.home || 'field') === herd.id);
+      for (const w of members) {
+        const d = dist(w, p);
+        let fleeR = 70 + w.temper * 170;
+        if (sleepy) fleeR *= 0.6;
+        if (m && p.gait === 2) fleeR *= 1.2;
+        if (m && p.gait === 0) fleeR *= 0.8;
+        if (p.fly) fleeR *= 0.7;
+        if (d < fleeR && w.flee <= 0) {
+          w.flee = rand(1.4, 2.2);
+          if (herd.panic <= 0) {
+            const ax = herd.x - p.x, ay = herd.y - p.y, al = Math.hypot(ax, ay) || 1;
+            herd.tx = clamp(herd.x + (ax / al) * 600, F.x + 250, F.x + F.w - 250);
+            herd.ty = clamp(herd.y + (ay / al) * 600, F.y + 250, F.y + F.h - 250);
+            herd.t = rand(8, 14);
+          }
+          herd.panic = 2.5;
+        }
+        let tx, ty, sp;
+        if (w.flee > 0) {
+          w.flee -= dt;
+          const ax = w.x - p.x, ay = w.y - p.y, al = Math.hypot(ax, ay) || 1;
+          tx = w.x + (ax / al) * 100 + (herd.x - w.x) * 0.15;
+          ty = w.y + (ay / al) * 100 + (herd.y - w.y) * 0.15;
+          sp = (170 + Horses.skill(w, 'speed') * 0.8) * (w.age < 3 ? 0.8 : 1);
           w.headTurn = 0;
         } else {
-          // пасётся: стоит, иногда делает пару шагов
-          w.grazeT -= dt;
-          if (w.grazeT <= 0) { w.grazeT = rand(3, 8); w.slot.x += rand(-30, 30); w.slot.y += rand(-30, 30); }
-          tx = w.x; ty = w.y; sp = 0;
-          w.headTurn = Math.sin(time * 0.8 + w.seed) * 0.35;
+          const gx = herd.x + w.slot.x, gy = herd.y + w.slot.y;
+          const gd = Math.hypot(gx - w.x, gy - w.y);
+          if (gd > 60) {
+            tx = gx; ty = gy;
+            sp = herd.panic > 0 ? 190 : gd > 300 ? 150 : gd > 150 ? 80 : 40;
+            w.headTurn = 0;
+          } else {
+            // пасётся: стоит, иногда делает пару шагов
+            w.grazeT -= dt;
+            if (w.grazeT <= 0) { w.grazeT = rand(3, 8); w.slot.x += rand(-30, 30); w.slot.y += rand(-30, 30); }
+            tx = w.x; ty = w.y; sp = 0;
+            w.headTurn = Math.sin(time * 0.8 + w.seed) * 0.35;
+          }
         }
+        // остаться на своей территории
+        if (w.x < F.x + 40) tx = Math.max(tx, F.x + 120);
+        if (w.x > F.x + F.w - 40) tx = Math.min(tx, F.x + F.w - 120);
+        if (w.y < F.y + 40) ty = Math.max(ty, F.y + 120);
+        if (w.y > F.y + F.h - 40) ty = Math.min(ty, F.y + F.h - 120);
+        moveToward(w, tx, ty, sp, dt, w.flee > 0 ? 4 : 2);
+        // пегасы взлетают, когда убегают
+        w.fly = w.magic && w.magic.wings && w.flee > 0 ? Math.min(1, (w.fly || 0) + dt * 2) : Math.max(0, (w.fly || 0) - dt);
+        for (const o of members) {
+          if (o === w) continue;
+          const dx = w.x - o.x, dy = w.y - o.y, dd = Math.hypot(dx, dy);
+          if (dd < 48 && dd > 0.1) { w.x += (dx / dd) * (48 - dd) * 0.5; w.y += (dy / dd) * (48 - dd) * 0.5; }
+        }
+        if (!w.fly) World.collide(w, 18);
+        w.x = clamp(w.x, F.x - 60, F.x + F.w + 60);
+        w.y = clamp(w.y, F.y - 60, F.y + F.h + 60);
       }
-      // остаться в поле
-      if (w.x < F.x + 40) tx = Math.max(tx, F.x + 120);
-      if (w.x > F.x + F.w - 40) tx = Math.min(tx, F.x + F.w - 120);
-      if (w.y < F.y + 40) ty = Math.max(ty, F.y + 120);
-      if (w.y > F.y + F.h - 40) ty = Math.min(ty, F.y + F.h - 120);
-      moveToward(w, tx, ty, sp, dt, w.flee > 0 ? 4 : 2);
-      // не толкаться
-      for (const o of wild) {
-        if (o === w) continue;
-        const dx = w.x - o.x, dy = w.y - o.y, dd = Math.hypot(dx, dy);
-        if (dd < 48 && dd > 0.1) { w.x += (dx / dd) * (48 - dd) * 0.5; w.y += (dy / dd) * (48 - dd) * 0.5; }
-      }
-      World.collide(w, 18);
-      w.x = clamp(w.x, F.x - 60, F.x + F.w + 60);
-    }
 
-    // новые лошади прибегают в поле взамен пойманных
-    if (wild.length < WILD_COUNT) {
-      respawnT -= dt;
-      if (respawnT <= 0) {
-        respawnT = rand(6, 12);
-        const F2 = World.FIELD;
-        const w = makeWild(F2.x + F2.w - 20, rand(F2.y + 200, F2.y + F2.h - 200));
-        w.slot = { x: rand(-150, 150), y: rand(-110, 110) };
-        wild.push(w);
-        UI.toast('🐎 В поле прибежала новая лошадь!');
+      // новые лошади приходят взамен пойманных
+      if (members.length < herd.count) {
+        herd.respawnT -= dt;
+        if (herd.respawnT <= 0) {
+          herd.respawnT = rand(8, 16);
+          const q = randomFieldPoint(200, F);
+          wild.push(makeWild(q.x, q.y, herd.id));
+          if (herd.id === 'field') UI.toast('🐎 В поле прибежала новая лошадь!');
+        }
       }
     }
   }
@@ -305,7 +330,7 @@ const Game = (() => {
       h.mood = clamp(h.mood + dt * moodD, 0, 100);
 
       if (h.state === 'stall') {
-        const sp = World.stallSpot(h.stall);
+        const sp = stallSpot(h.stall);
         h.x = sp.x; h.y = sp.y; h.angle = sp.angle; h.spd = 0;
         h.headTurn = Math.sin(time * 0.5 + h.seed) * 0.35;
       } else if (inPaddock) {
@@ -332,6 +357,7 @@ const Game = (() => {
             f.state = 'stall'; f.stall = st; f.hunger = 90; f.mood = 90;
             S.horses.push(f);
             S.stats.foals++;
+            if (Horses.isMagic(f)) stat('magicFoals');
             h.preg = null;
             const ph = Horses.pheno(f);
             UI.toast(`🍼 У кобылы ${h.name} родился жеребёнок! ${f.name} — ${Horses.sexText(f)}, ${ph.name}`, 'good');
@@ -362,14 +388,18 @@ const Game = (() => {
       p.gait = 0;
       UI.toast(`😮‍💨 ${m.name} ${Horses.v(m, 'устала', 'устал')} — только шагом. Отдохните в конюшне.`, 'warn');
     }
-    const max = m ? gaitSpeed(m, p.gait) : 140;
+    if (p.fly && !(m && m.magic && m.magic.wings)) p.fly = false;
+    const max = m ? gaitSpeed(m, p.gait) * (p.fly ? 1.3 : 1) : 140;
     const k = Math.min(1, dt * (m ? 3.5 : 12));
     p.vx = (p.vx || 0) + (dx * max - (p.vx || 0)) * k;
     p.vy = (p.vy || 0) + (dy * max - (p.vy || 0)) * k;
     const ox = p.x, oy = p.y;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    World.collide(p, m ? 20 : 10);
+    if (p.fly) {
+      p.x = clamp(p.x, 20, World.W - 20); p.y = clamp(p.y, 20, World.H - 20);
+      stat('flyTime', dt);
+    } else World.collide(p, m ? 20 : 10);
     p.spd = dt > 0 ? Math.hypot(p.x - ox, p.y - oy) / dt : 0;
     if (p.spd > 8) p.angle = lerpAngle(p.angle, Math.atan2(p.y - oy, p.x - ox), Math.min(1, dt * (m ? 6 : 14)));
     p.phase = (p.phase || 0) + (m ? dt * (3 + p.spd * 0.045) * (p.spd > 4 ? 1 : 0) : p.spd * dt * 0.18);
@@ -390,7 +420,7 @@ const Game = (() => {
       moveToward(led, back.x, back.y, d > 25 ? Math.min(d * 3, 300) : 0, dt, 5);
       led.headTurn = 0;
       World.collide(led, 16);
-      if (World.inRect(p.x, p.y, World.STABLE, 10)) {
+      if (!p.fly && (World.inRect(p.x, p.y, World.STABLE, 10) || Farm.nearStable(p))) {
         const st = freeStall();
         if (st >= 0) {
           led.state = 'stall'; led.stall = st; led.flee = 0;
@@ -447,14 +477,15 @@ const Game = (() => {
       wild = wild.filter(x => x !== w);
       w.state = 'led'; w.flee = 0;
       led = w;
-      respawnT = rand(5, 10);
       S.stats.caught++;
+      if (Horses.isMagic(w)) stat('magicCaught');
+      if (w.magic && w.magic.skeleton) stat('skeletonCaught');
       const ph = Horses.pheno(w);
       UI.toast(`🎉 Поймала! ${w.name}: ${Genetics.BREEDS[w.breed].name.toLowerCase()}, ${ph.name}. Веди в конюшню!`, 'good');
       Sound.fanfare();
     } else {
       w.flee = 2.5;
-      herd.panic = 3;
+      HERDS[w.home || 'field'].panic = 3;
       lassoCd = 1.2;
       UI.toast(l.bait ? 'Мимо! Лошадь съела угощение и убежала 🥕' : 'Мимо! Лошадь убежала. Попробуй ещё!', 'warn');
       Sound.fail();
@@ -548,6 +579,7 @@ const Game = (() => {
     S.money += money;
     Horses.addTrain(m, 'jump', clean * 0.5 * (ex.height / 80));
     m.energy = clamp(m.energy - 15, 0, 100);
+    if (!eliminated) { stat('jumpRounds'); if (faults === 0 && ex.height >= 80) stat('jump80'); }
     const res = { height: ex.height, t: ex.t, norm: JUMP_NORM, over, faults, clean, total: World.COURSE.length, eliminated, money, medal, skill: Horses.skill(m, 'jump') };
     ex = null;
     UI.jumpResult(res);
@@ -637,6 +669,7 @@ const Game = (() => {
         m.energy = clamp(m.energy - 6, 0, 100);
         m.mood = clamp(m.mood + 3, 0, 100);
         const medal = clean === 5 ? 'gold' : clean === 4 ? 'silver' : clean === 3 ? 'bronze' : null;
+        if (clean === 5) stat('cavClean');
         if (medal) S.stats[medal]++;
         ex = null;
         UI.result('Кавалетти', clean, 5, money, medal, `Прыжки: ${Horses.skill(m, 'jump')}`);
@@ -685,6 +718,7 @@ const Game = (() => {
     Horses.addTrain(m, 'dressage', pct / 20);
     m.energy = clamp(m.energy - 8, 0, 100);
     const medal = pct >= 70 ? 'gold' : pct >= 60 ? 'silver' : pct >= 50 ? 'bronze' : null;
+    if (pct >= 60) stat('dres60');
     if (medal) S.stats[medal]++;
     const testName = ex.test.name;
     ex = null;
@@ -856,6 +890,58 @@ const Game = (() => {
       if (pr) pr.fn();
     },
     lasso() { startLasso(nearestCatchable()); },
+    toggleFly() {
+      const p = S.player, m = mounted();
+      if (!m || !(m.magic && m.magic.wings)) return UI.toast('Летать умеют только лошади с крыльями — пегасы 🪽');
+      if (p.fly) {
+        if (World.blocked(p.x, p.y, 20)) return UI.toast('Здесь не приземлиться — найди ровное место', 'warn');
+        p.fly = false;
+        UI.toast(`🪽 ${m.name} мягко ${Horses.v(m, 'приземлилась', 'приземлился')}`);
+      } else {
+        if (m.energy < 10) return UI.toast(`${m.name} ${Horses.v(m, 'устала', 'устал')} — сначала отдохните`, 'warn');
+        if (ex || Events.busy()) return UI.toast('Во время упражнений и скачек летать нельзя');
+        p.fly = true;
+        p.gait = 2;
+        UI.toast('🪽 Взлетаем! Над водой и деревьями можно летать. V — приземлиться');
+        Sound.fanfare();
+      }
+    },
+    toggleDetector() {
+      const p = S.player;
+      if (!S.tack.detector) return UI.toast('Металлоискатель продаётся в повозке «Корм и амуниция»');
+      p.detector = !p.detector;
+      UI.toast(p.detector ? '📡 Металлоискатель включён. Чем чаще пищит — тем ближе клад!' : '📡 Металлоискатель выключен');
+    },
+    setManeStyle(h, style) {
+      if (!h || h.maneStyle === style) return;
+      h.maneStyle = style;
+      if (style !== 'normal') stat('maneStyled');
+      Sound.tick();
+    },
+    dyeMane(h, dye) {
+      if (!h) return;
+      if (!dye) { h.maneDye = null; Sound.tick(); return; }
+      const d = Items.DYES[dye];
+      if (!(S.inv[d.item] > 0)) return UI.toast(`Нет краски: ${d.name}. Купи у Лолы или в повозке`, 'warn');
+      S.inv[d.item]--;
+      h.maneDye = dye;
+      stat('maneDyed');
+      UI.toast(`🎨 Грива стала: ${d.name.toLowerCase()}!`, 'good');
+      Sound.coin();
+    },
+    buyItem(key, n, price) {
+      if (S.money < price * n) return UI.toast('Не хватает монет', 'warn');
+      S.money -= price * n;
+      S.inv[key] = (S.inv[key] || 0) + n;
+      Sound.coin();
+    },
+    sellItem(key, n) {
+      const it = Items.ITEMS[key];
+      if (!it || !it.sell || !(S.inv[key] >= n)) return;
+      S.inv[key] -= n;
+      S.money += it.sell * n;
+      Sound.coin();
+    },
     startExercise, startJumping, cancelExercise: () => { cancelExercise('Упражнение прервано'); Events.cancelRace('Скачки прерваны'); }, reset,
     liftLegs() { if (ex && ex.type === 'jump') jumpPress(); else liftLegs(); },
     setGfx(mode) { setGfx(mode); },
@@ -871,10 +957,14 @@ const Game = (() => {
   /* ---------------- подсказки и кнопки ---------------- */
   function computePrompt() {
     const p = S.player;
-    if (ex || Events.busy()) return null;
+    if (ex || Events.busy() || Farm.mode) return null;
+    const fp = Farm.prompt();
+    if (fp) return fp;
+    const qp = Quests.prompt();
+    if (qp) return qp;
     const ep = Events.prompt();
     if (ep) return ep;
-    if (World.inRect(p.x, p.y, World.STABLE, 30) || World.inRect(p.x, p.y, World.PADDOCK, 30))
+    if (World.inRect(p.x, p.y, World.STABLE, 30) || World.inRect(p.x, p.y, World.PADDOCK, 30) || Farm.nearStable(p))
       return { label: '🐴 Мои лошади', fn: () => UI.openStable(true) };
     const near = W => Math.hypot(p.x - (W.x + W.w / 2), p.y - (W.y + W.h / 2)) < 130;
     if (near(World.SELL)) return { label: '💰 Продать лошадь', fn: () => UI.openSell() };
@@ -892,6 +982,7 @@ const Game = (() => {
 
   function hint() {
     const tk = S.tack;
+    if (Farm.mode) return '';
     if (!S.horses.length && !led) return 'Иди в поле справа → и поймай лошадь лассо. Спокойных лошадей ловить легче!';
     if (led) return `Веди лошадь по кличке ${led.name} в конюшню — она пойдёт за тобой`;
     if (!tk.saddle || !tk.bridle) return 'Купи седло и уздечку в повозке «Корм и амуниция», чтобы ездить верхом';
@@ -899,8 +990,13 @@ const Game = (() => {
     if (ex || Events.busy()) return '';
     if (inArena()) return 'Нажми «Тренировка»: кавалетти или выездка';
     if (inJumpField()) return 'Нажми «Конкур» и выбери высоту препятствий';
-    if (isNight()) return 'Ночь: табун спит — подкрасться к лошадям легче. Фонари освещают ферму';
-    return 'Аллюры: 1 — шаг, 2 — рысь, 3 — галоп. Манеж — выездка и кавалетти, конкурное поле — внизу';
+    if (S.player.fly) return 'Ты летишь! V — приземлиться. Сверху видно весь мир';
+    const reg = World.regionAt(S.player.x, S.player.y);
+    if (reg === 'cave') return 'В пещере темно. Здесь бродят лошади-скелеты и привидения, а где-то спрятан сундук графа';
+    if (reg === 'mushroom') return 'Грибное королевство: здесь живут пегасы, единороги, огненные и ледяные лошадки';
+    if (isNight()) return 'Ночь: табуны спят — подкрасться к лошадям легче. Фонари освещают ферму';
+    if (!Quests.journal().length) return 'Поговори с жителями (💬) — у них есть задания. Список заданий — кнопка 📜';
+    return 'Аллюры: 1 — шаг, 2 — рысь, 3 — галоп. Задания — кнопка 📜, стройка — 🔨';
   }
 
   /* ---------------- ввод ---------------- */
@@ -914,6 +1010,10 @@ const Game = (() => {
       if (UI.isModalOpen()) {
         if (code === 'Escape') UI.closeModal();
         return;
+      }
+      if (Farm.mode) {
+        if (code === 'Escape') { Farm.cancel(); return; }
+        if (code === 'KeyR') { Farm.rotate(); return; }
       }
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code)) e.preventDefault();
       if (e.repeat) { keys.add(code); return; }
@@ -931,40 +1031,26 @@ const Game = (() => {
       if (code === 'KeyR') act.setGait(Math.min(2, S.player.gait + 1));
       if (code === 'KeyX' || code === 'KeyF') act.dismount();
       if (code === 'Escape' && ex) act.cancelExercise();
+      if (code === 'KeyV') act.toggleFly();
+      if (code === 'KeyM') act.toggleDetector();
+      if (code === 'KeyB') UI.openBuild();
+      if (code === 'KeyJ') UI.openQuests();
     } else keys.delete(code);
   }
 
-  // 3D-режимы: «кубики» и «реализм»
-  const R3 = { voxel: Voxel, real: Real };
-  const GFX_NAMES = { voxel: 'воксельную графику', real: 'реалистичную графику' };
-  const active3d = () => { const r = R3[S.gfx]; return r && r.ready ? r : null; };
-
-  function setGfx(mode) {
-    S.gfx = mode;
-    for (const k in R3) if (k !== mode) R3[k].setVisible(false);
-    if (R3[mode]) {
-      if (!R3[mode].ready) UI.toast(`Загружаю ${GFX_NAMES[mode]}…`);
-      R3[mode].load().then(ok => {
-        if (!ok) { S.gfx = '2d'; UI.toast('Не получилось загрузить 3D. Остаётся 2D.', 'warn'); }
-        R3[mode].setVisible(S.gfx === mode);
-        save();
-      });
-    }
-    save();
-  }
-
   function toWorld(e) {
-    const r3 = active3d();
-    if (r3) {
-      const w = r3.toWorld(e.clientX, e.clientY);
-      if (w) return w;
-    }
-    const r = canvas.getBoundingClientRect();
-    return { x: (e.clientX - r.left) / zoom + cam.x, y: (e.clientY - r.top) / zoom + cam.y };
+    const w = Voxel.toWorld(e.clientX, e.clientY);
+    return w || { x: S.player.x, y: S.player.y };
   }
 
   function onPointer(e, type) {
-    if (UI.isModalOpen() || UI.isLassoOpen()) return;
+    if (UI.isModalOpen() || UI.isLassoOpen() || !Voxel.ready) return;
+    if (Farm.mode) {
+      const w = toWorld(e);
+      if (type === 'down') Farm.buildAt(w.x, w.y);
+      else if (type === 'move') Farm.hover(w.x, w.y);
+      return;
+    }
     if (type === 'down') {
       pointerDown = true;
       const w = toWorld(e);
@@ -986,9 +1072,8 @@ const Game = (() => {
     dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.width = Math.floor(innerWidth * dpr);
     canvas.height = Math.floor(innerHeight * dpr);
-    zoom = innerWidth < 600 ? 0.62 : innerWidth < 1000 ? 0.8 : 1;
-    viewW = innerWidth / zoom;
-    viewH = innerHeight / zoom;
+    viewW = innerWidth < 700 ? 1100 : 1500;
+    viewH = viewW * innerHeight / innerWidth;
   }
 
   /* ---------------- отрисовка ---------------- */
@@ -996,29 +1081,40 @@ const Game = (() => {
     return { pad: S.tack.pad || '#7a6a55', helmet: S.tack.helmet || '#222a3a', boots: S.tack.boots, shirt: S.player.shirt };
   }
 
-  // в 3D-режиме этот холст — прозрачный слой с надписями поверх сцены
-  function renderOverlay3d(R) {
-    const p = S.player;
+  // поверх 3D-сцены — прозрачный холст с надписями, стрелками, дождём
+  function renderOverlay() {
+    const p = S.player, R = Voxel;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // высоты надписей — в «пикселях карты»
-    const labels = [
-      ['🐴 КОНЮШНЯ', World.STABLE.x + World.STABLE.w / 2, World.STABLE.y - 10, 200],
-      ['🏇 МАНЕЖ', World.ARENA.x + World.ARENA.w * 0.32, World.ARENA.y - 20, 60],
-      ['🌿 ЛЕВАДА', World.PADDOCK.x + World.PADDOCK.w / 2, World.PADDOCK.y - 15, 70],
-      ['🏆 КОНКУРНОЕ ПОЛЕ', World.JUMPF.x + World.JUMPF.w / 2, World.JUMPF.y - 20, 60],
-      [World.SELL.name, World.SELL.x + World.SELL.w / 2, World.SELL.y - 10, 120],
-      [World.SHOP.name, World.SHOP.x + World.SHOP.w / 2, World.SHOP.y - 10, 120],
-    ];
-    for (const [t, x, y, h] of labels) {
-      if (Math.abs(x - p.x) > 1200 || Math.abs(y - p.y) > 900) continue;
+    if (!Voxel.ready) { Draw.label(ctx, '🐴 Загрузка мира…', innerWidth / 2, innerHeight / 2, 28, '#3b2a1a'); return; }
+    const near = (x, y) => Math.abs(x - p.x) < 1300 && Math.abs(y - p.y) < 1000;
+    const lbl = (t, x, y, h, size = 16, color = '#3b2a1a') => {
+      if (!near(x, y)) return;
       const s = R.project(x, y, h);
-      if (s.ok) Draw.label(ctx, t, s.x, s.y, 16, '#3b2a1a');
+      if (s.ok) Draw.label(ctx, t, s.x, s.y, size, color);
+    };
+    // высоты надписей — в «пикселях карты»
+    lbl('🐴 КОНЮШНЯ', World.STABLE.x + World.STABLE.w / 2, World.STABLE.y - 10, 200);
+    lbl('🏇 МАНЕЖ', World.ARENA.x + World.ARENA.w * 0.32, World.ARENA.y - 20, 60);
+    lbl('🌿 ЛЕВАДА', World.PADDOCK.x + World.PADDOCK.w / 2, World.PADDOCK.y - 15, 70);
+    lbl('🏆 КОНКУРНОЕ ПОЛЕ', World.JUMPF.x + World.JUMPF.w / 2, World.JUMPF.y - 20, 60);
+    lbl(World.SELL.name, World.SELL.x + World.SELL.w / 2, World.SELL.y - 10, 120);
+    lbl(World.SHOP.name, World.SHOP.x + World.SHOP.w / 2, World.SHOP.y - 10, 120);
+    for (const hh of World.HOUSES) if (hh.name) lbl(hh.name, hh.x + hh.w / 2, hh.y - 10, 260, 14);
+    lbl('📋 Доска заданий', World.BOARD.x, World.BOARD.y, 140, 14);
+    lbl('🦇 Пещера', World.CAVE.x - 120, (World.CAVE_GATE.y1 + World.CAVE_GATE.y2) / 2, 300, 18, '#343a40');
+    if (!S.flags.chest_opened) lbl('🧰', World.CHEST.x, World.CHEST.y, 80, 22);
+    // жители и значки заданий
+    for (const n of Quests.NPCS) {
+      if (!near(n.x, n.y)) continue;
+      const mk = Quests.marker(n.id);
+      lbl(n.name, n.x, n.y, 230, 13, n.ghost ? '#5c7cfa' : '#1c4f8a');
+      if (mk === '❗' || mk === '❓') lbl(mk, n.x, n.y, 300 + Math.sin(time * 4) * 8, 24, '#e67700');
     }
     // имена на табличках денников
     if (World.inRect(p.x, p.y, World.STABLE, 250)) {
-      for (let i = 0; i < MAX_STALLS; i++) {
+      for (let i = 0; i < 20; i++) {
         const h = horseInStall(i);
         if (!h) continue;
         const r = World.stallRect(i);
@@ -1032,49 +1128,26 @@ const Game = (() => {
       if (s.ok) Draw.label(ctx, f.text, s.x, s.y - f.t * 30, 18, f.color);
     }
     ctx.globalAlpha = 1;
-    for (const r of Events.rivals()) {
-      const s = R.project(r.h.x, r.h.y, 120);
-      if (s.ok) Draw.label(ctx, r.name, s.x, s.y, 12, '#1c4f8a');
-    }
-    const st = Events.START;
-    if (Math.abs(st.x - p.x) < 1200 && Math.abs(st.y - p.y) < 900) {
-      const s = R.project(st.x, st.y, 90);
-      if (s.ok) Draw.label(ctx, '🏁 СКАЧКИ', s.x, s.y, 15, '#3b2a1a');
-    }
+    for (const r of Events.rivals()) lbl(r.name, r.h.x, r.h.y, 120, 12, '#1c4f8a');
+    lbl('🏁 СКАЧКИ', Events.START.x, Events.START.y, 90, 15);
     const shoe = Events.shoe();
-    if (shoe) {
-      const s = R.project(shoe.x, shoe.y, 15);
-      if (s.ok) Draw.label(ctx, '✨🧲✨', s.x, s.y + Math.sin(time * 5) * 3, 16, '#b07800');
-    }
-    const ng = Events.nextGate();
-    if (ng) {
-      const s0 = R.project(p.x, p.y, 0), s1 = R.project(ng.x, ng.y, 0);
+    if (shoe) lbl('✨🧲✨', shoe.x, shoe.y + Math.sin(time * 5) * 3, 15, 16, '#b07800');
+    const arrowTo = (tx, ty) => {
+      const s0 = R.project(p.x, p.y, 0), s1 = R.project(tx, ty, 0);
       const sa = Math.atan2(s1.y - s0.y, s1.x - s0.x);
       ctx.save();
       ctx.translate(s0.x + Math.cos(sa) * 70, s0.y + Math.sin(sa) * 70);
       ctx.rotate(sa);
       ctx.fillStyle = 'rgba(255,212,0,0.95)'; ctx.strokeStyle = 'rgba(90,60,0,0.8)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-6, -14); ctx.lineTo(-6, 14); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.restore();
-      const sg = R.project(ng.x, ng.y, 110);
-      if (sg.ok) Draw.label(ctx, ng.finish ? '🏁 ФИНИШ' : `Ворота ${ng.n}`, sg.x, sg.y, 15, '#b35c00');
-    }
-    if (!S.horses.length && !led && p.x < World.FIELD.x - 100) {
-      const a = Math.atan2(herd.y - p.y, herd.x - p.x);
-      const s0 = R.project(p.x, p.y, 0), s1 = R.project(p.x + Math.cos(a) * 80, p.y + Math.sin(a) * 80, 0);
-      const sa = Math.atan2(s1.y - s0.y, s1.x - s0.x);
-      ctx.save();
-      ctx.translate(s1.x, s1.y);
-      ctx.rotate(sa);
-      ctx.fillStyle = 'rgba(255,214,0,0.95)';
-      ctx.strokeStyle = 'rgba(90,60,0,0.7)';
-      ctx.lineWidth = 2;
       const b = Math.sin(time * 5) * 4;
-      ctx.beginPath();
-      ctx.moveTo(18 + b, 0); ctx.lineTo(-6 + b, -13); ctx.lineTo(-6 + b, 13); ctx.closePath();
-      ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(22 + b, 0); ctx.lineTo(-6 + b, -14); ctx.lineTo(-6 + b, 14); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.restore();
-    }
+    };
+    const ng = Events.nextGate();
+    if (ng) {
+      arrowTo(ng.x, ng.y);
+      lbl(ng.finish ? '🏁 ФИНИШ' : `Ворота ${ng.n}`, ng.x, ng.y, 110, 15, '#b35c00');
+    } else if (!S.horses.length && !led && p.x < World.FIELD.x - 100) arrowTo(HERDS.field.x, HERDS.field.y);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     Events.drawScreen(ctx, canvas.width, canvas.height, dpr, time);
     Draw.minimap(mmctx, S, api);
@@ -1083,124 +1156,9 @@ const Game = (() => {
 
   function render() {
     const p = S.player;
-    const r3 = active3d();
-    if (r3) {
-      cam.x = p.x - viewW / 2; cam.y = p.y - viewH / 2;
-      r3.render(api);
-      renderOverlay3d(r3);
-      return;
-    }
-    cam.x = viewW >= World.W ? (World.W - viewW) / 2 : clamp(p.x - viewW / 2, 0, World.W - viewW);
-    cam.y = viewH >= World.H ? (World.H - viewH) / 2 : clamp(p.y - viewH / 2, 0, World.H - viewH);
-    ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, -cam.x * dpr * zoom, -cam.y * dpr * zoom);
-    const view = { x: cam.x, y: cam.y, w: viewW, h: viewH };
-    const visible = (x, y, m = 120) => x > view.x - m && x < view.x + view.w + m && y > view.y - m && y < view.y + view.h + m;
-
-    Draw.ground(ctx, view);
-    if (visible(World.STABLE.x + 370, World.STABLE.y + 170, 600)) Draw.stable(ctx, S, api);
-    if (visible(World.ARENA.x + 410, World.ARENA.y + 200, 600)) Draw.arena(ctx, S, api);
-    if (visible(World.JUMPF.x + 680, World.JUMPF.y + 310, 800)) Draw.jumpField(ctx, api);
-    Draw.lamps(ctx, 1 - daylight(), time);
-    Events.draw2d(ctx, visible, time);
-    Draw.paddock(ctx);
-    Draw.wagon(ctx, World.SELL, '#d63a3a', time);
-    Draw.wagon(ctx, World.SHOP, '#2e9d4f', time);
-    for (const tr of World.TREES) if (visible(tr.x, tr.y)) Draw.treeTrunk(ctx, tr);
-
-    // подсветка лошади, которую можно поймать
-    const target = nearestCatchable();
-    if (target) {
-      ctx.strokeStyle = 'rgba(255,230,80,0.9)';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([8, 6]);
-      ctx.beginPath();
-      ctx.arc(target.x, target.y, 46 * Horses.sizeOf(target) + Math.sin(time * 5) * 3, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    // все лошади и игрок — сортировка по высоте, чтобы ближние перекрывали дальних
-    const m = mounted();
-    const ents = [];
-    for (const h of S.horses) if (h.state !== 'ridden' && visible(h.x, h.y)) ents.push({ y: h.y, h });
-    for (const h of wild) if (visible(h.x, h.y)) ents.push({ y: h.y, h });
-    if (led) ents.push({ y: led.y, h: led });
-    for (const r of Events.rivals()) if (visible(r.h.x, r.h.y)) ents.push({ y: r.h.y, h: r.h, rider: r.rider });
-    ents.push({ y: p.y, player: true });
-    ents.sort((a, b) => a.y - b.y);
-    for (const e of ents) {
-      if (e.player) {
-        if (m) Draw.horse(ctx, m, p.x, p.y, p.angle, { t: time, rider: rider(), lift: riderLift() });
-        else Draw.girl(ctx, p, time);
-      } else {
-        Draw.horse(ctx, e.h, e.h.x, e.h.y, e.h.angle, { t: time, rider: e.rider });
-      }
-    }
-
-    // верёвка к пойманной лошади
-    if (led) {
-      const s = Horses.sizeOf(led);
-      ctx.strokeStyle = '#c9a35b';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(p.x + Math.cos(p.angle) * 4, p.y + Math.sin(p.angle) * 4);
-      const hx = led.x + Math.cos(led.angle) * 44 * s, hy = led.y + Math.sin(led.angle) * 44 * s;
-      ctx.quadraticCurveTo((p.x + hx) / 2, (p.y + hy) / 2 + 15, hx, hy);
-      ctx.stroke();
-    }
-
-    for (const tr of World.TREES) if (visible(tr.x, tr.y)) Draw.treeTop(ctx, tr);
-    Events.drawArrow2d(ctx, time);
-
-    // стрелка-подсказка к полю для новичка
-    if (!S.horses.length && !led && p.x < World.FIELD.x - 100) {
-      const a = Math.atan2(herd.y - p.y, herd.x - p.x);
-      ctx.save();
-      ctx.translate(p.x + Math.cos(a) * 70, p.y + Math.sin(a) * 70);
-      ctx.rotate(a);
-      ctx.fillStyle = 'rgba(255,214,0,0.95)';
-      ctx.strokeStyle = 'rgba(90,60,0,0.7)';
-      ctx.lineWidth = 2;
-      const b = Math.sin(time * 5) * 4;
-      ctx.beginPath();
-      ctx.moveTo(18 + b, 0); ctx.lineTo(-6 + b, -13); ctx.lineTo(-6 + b, 13); ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.restore();
-    }
-
-    // всплывающие надписи
-    for (const f of floats) {
-      ctx.globalAlpha = Math.max(0, 1 - f.t / 1.4);
-      Draw.label(ctx, f.text, f.x, f.y - f.t * 30, 18, f.color);
-    }
-    ctx.globalAlpha = 1;
-
-    // ночь: затемнение и свет фонарей
-    const dl = daylight();
-    const dark = (1 - dl) * 0.68;
-    const tint = dl > 0 && dl < 1 ? `rgba(255,120,40,${0.12 * Math.sin(dl * Math.PI)})` : null;
-    if (dark > 0.01 || tint) {
-      const k = dpr * zoom;
-      const lights = World.LAMPS.filter(l => visible(l.x, l.y, 300)).map(l => ({ x: (l.x - cam.x) * k, y: (l.y - cam.y) * k, r: 190 * k }));
-      lights.push({ x: (p.x - cam.x) * k, y: (p.y - cam.y) * k, r: 150 * k });
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      Draw.night(ctx, canvas.width, canvas.height, dark, tint, lights, time);
-      // светлячки над полем
-      if (dark > 0.3) {
-        ctx.fillStyle = 'rgba(220,255,120,0.9)';
-        for (let i = 0; i < 40; i++) {
-          const fx = World.FIELD.x + ((i * 397) % World.FIELD.w) + Math.sin(time * 0.7 + i) * 30;
-          const fy = World.FIELD.y + ((i * 631) % World.FIELD.h) + Math.cos(time * 0.5 + i * 2) * 30;
-          if (!visible(fx, fy, 0) || Math.sin(time * 3 + i * 1.7) < 0.3) continue;
-          ctx.fillRect((fx - cam.x) * k, (fy - cam.y) * k, 3 * k, 3 * k);
-        }
-      }
-    }
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    Events.drawScreen(ctx, canvas.width, canvas.height, dpr, time);
-    Draw.minimap(mmctx, S, api);
-    Events.drawMinimap(mmctx, mmctx.canvas.width / World.W);
+    cam.x = p.x - viewW / 2; cam.y = p.y - viewH / 2;
+    if (Voxel.ready) Voxel.render(api);
+    renderOverlay();
   }
 
   function riderLift() {
@@ -1211,7 +1169,7 @@ const Game = (() => {
   }
 
   /* ---------------- главный цикл ---------------- */
-  let last = 0, hudT = 0;
+  let last = 0, hudT = 0, visitT = 0;
   function frame(ts) {
     const dt = Math.min(0.05, (ts - last) / 1000 || 0);
     last = ts;
@@ -1228,6 +1186,10 @@ const Game = (() => {
       updateHerd(dt);
       updateOwned(dt);
       Events.update(dt);
+      Farm.update(dt);
+      Creatures.update(dt);
+      visitT -= dt;
+      if (visitT <= 0) { visitT = 0.5; Quests.updateVisits(); }
       if (ex) {
         if (!mounted()) ex = null;
         else if (!inExerciseArea()) cancelExercise(ex.type === 'jump' ? 'Ты выехала с конкурного поля — маршрут прерван' : 'Ты выехала из манежа — упражнение прервано');
@@ -1246,17 +1208,19 @@ const Game = (() => {
       hudT = 0.1;
       const m = mounted();
       UI.updateHud({
-        money: S.money, count: S.horses.length, max: MAX_STALLS, stats: S.stats, hint: hint(),
+        money: S.money, count: S.horses.length, max: Farm.maxStalls(), stats: S.stats, hint: hint(),
         prompt: computePrompt(), canLasso: !!nearestCatchable() && !lasso,
-        mounted: m ? { name: m.name, gait: S.player.gait, energy: m.energy } : null,
-        led: led ? led.name : null, exercise: exerciseHud(), clock: clockText(), gfx: S.gfx,
+        mounted: m ? { name: m.name, gait: S.player.gait, energy: m.energy, wings: !!(m.magic && m.magic.wings), fly: !!S.player.fly } : null,
+        led: led ? led.name : null, exercise: Farm.hud() || exerciseHud(), clock: clockText(),
+        detector: S.tack.detector ? { on: !!S.player.detector, signal: Farm.signal() } : null,
+        quests: Quests.journal().length, region: World.REGION_NAMES[World.regionAt(S.player.x, S.player.y)],
       });
     }
     requestAnimationFrame(frame);
   }
 
   const api = {
-    get S() { return S; }, FOOD, TACK, TESTS, COLORS, GAITS, MAX_STALLS, act,
+    get S() { return S; }, FOOD, TACK, TESTS, COLORS, GAITS, act, maxStalls: () => Farm.maxStalls(), stat, isNight, stallSpot,
     wild: () => wild, led: () => led, exercise: () => ex, time: () => time, view: () => ({ x: cam.x, y: cam.y, w: viewW, h: viewH }),
     mounted, byId, freeStall, horseInStall, atFarm, daylight, rider, riderLift, catchable: () => nearestCatchable(),
     comfortHeight, JUMP_HEIGHTS, JUMP_NORM,
@@ -1264,6 +1228,7 @@ const Game = (() => {
     resolveLasso, save, sellPrice, float, makeWild,
     findHorse: id => S.horses.find(x => x.id === id) || (led && led.id === id ? led : null) || Events.findHorse(id),
     rivals: () => Events.rivals(), gates: () => Events.gates(), bunnies: () => Events.bunnies(), weather: () => Events.weather(),
+    herds: () => HERDS,
   };
 
   function start() {
@@ -1285,10 +1250,15 @@ const Game = (() => {
     document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
     UI.init(api);
     Events.init(api);
-    if (R3[S.gfx]) setGfx(S.gfx);
-    canvas.addEventListener('wheel', e => { const r3 = active3d(); if (r3) { r3.zoom(e.deltaY); e.preventDefault(); } }, { passive: false });
-    if (!S.seenHelp) { S.seenHelp = true; UI.openHelp(); }
+    Farm.init(api);
+    Quests.init(api);
+    Creatures.init(api);
+    canvas.addEventListener('wheel', e => { Voxel.zoom(e.deltaY); e.preventDefault(); }, { passive: false });
     requestAnimationFrame(ts => { last = ts; requestAnimationFrame(frame); });
+    Voxel.load().then(ok => {
+      if (!ok) { UI.toast('Не получилось запустить 3D-графику: браузер не поддерживает WebGL', 'warn'); return; }
+      if (!S.seenHelp) { S.seenHelp = true; UI.openHelp(); }
+    });
   }
 
   return Object.assign(api, { start });
@@ -1312,6 +1282,8 @@ const Sound = (() => {
   }
   return {
     tick: () => tone(880, 0.12, 'triangle'),
+    beep: f => tone(f, 0.06, 'square', 0.04),
+    boo: () => { tone(300, 0.5, 'sine', 0.1); tone(220, 0.7, 'sine', 0.08, 0.2); },
     coin: () => { tone(988, 0.1, 'square', 0.06); tone(1319, 0.25, 'square', 0.06, 0.08); },
     fail: () => { tone(220, 0.25, 'sawtooth', 0.07); tone(160, 0.35, 'sawtooth', 0.07, 0.15); },
     thud: () => tone(110, 0.2, 'triangle', 0.2),

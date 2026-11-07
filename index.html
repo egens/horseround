@@ -18,14 +18,17 @@
     </div>
     <div class="hud-right">
       <button id="btn-horses" class="pill btn-hud" title="Мои лошади">🐴 Лошади</button>
-      <button id="btn-gfx" class="pill btn-hud" title="Переключить графику">🗺️ 2D</button>
+      <button id="btn-quests" class="pill btn-hud" title="Задания (J)">📜</button>
+      <button id="btn-build" class="pill btn-hud" title="Стройка (B)">🔨</button>
+      <button id="btn-detector" class="pill btn-hud hidden" title="Металлоискатель (M)">📡</button>
       <button id="btn-inv" class="pill btn-hud" title="Рюкзак">🎒</button>
       <button id="btn-help" class="pill btn-hud" title="Как играть">❓</button>
       <button id="btn-sound" class="pill btn-hud" title="Звук">🔊</button>
     </div>
   </div>
-  <canvas id="minimap" width="190" height="120"></canvas>
+  <canvas id="minimap" width="210" height="140"></canvas>
   <div id="hint" class="hidden"></div>
+  <div id="detector-meter" class="hidden"><span>📡</span><div class="track"><div id="detector-bar"></div></div></div>
   <div id="toasts"></div>
 
   <div id="exercise" class="hidden">
@@ -41,6 +44,7 @@
         <button data-gait="0" class="btn">1 Шаг</button>
         <button data-gait="1" class="btn">2 Рысь</button>
         <button data-gait="2" class="btn">3 Галоп</button>
+        <button id="btn-fly" class="btn hidden">🪽 Взлететь</button>
         <button id="btn-dismount" class="btn ghost">Слезть</button>
       </div>
     </div>
@@ -71,13 +75,16 @@
 
   <script src="js/genetics.js"></script>
   <script src="js/horses.js"></script>
+  <script src="js/items.js"></script>
   <script src="js/world.js"></script>
   <script src="js/draw.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/events.js"></script>
+  <script src="js/farm.js"></script>
+  <script src="js/quests.js"></script>
+  <script src="js/creatures.js"></script>
   <script src="js/three-loader.js"></script>
   <script src="js/voxel.js"></script>
-  <script src="js/real.js"></script>
   <script src="js/game.js"></script>
   <script>Game.start();</script>
 </body>

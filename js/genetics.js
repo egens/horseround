@@ -79,6 +79,32 @@ const Genetics = (() => {
       freq: { E: 0.65, A: 0.5, Cr: 0.06, D: 0.04, G: 0.06, TO: 0.25, Rn: 0.06, Z: 0.2 },
       stats: { speed: [30, 50], jump: [40, 65], dressage: [35, 55], stamina: [60, 85] },
     },
+    // волшебные породы живут только в Грибном королевстве, скелеты — в пещере
+    pegasus: {
+      name: 'Пегас', weight: 0, home: 'magic', hw: 1, size: 1.0, temper: 0.75, magic: { wings: true },
+      freq: { E: 0.5, A: 0.5, Cr: 0.2, G: 0.55 },
+      stats: { speed: [80, 98], jump: [70, 95], dressage: [60, 85], stamina: [75, 95] },
+    },
+    unicorn: {
+      name: 'Единорог', weight: 0, home: 'magic', hw: 1, size: 1.0, temper: 0.7, magic: { horn: true }, sheen: true,
+      freq: { E: 0.5, A: 0.5, Cr: 0.3, G: 0.7 },
+      stats: { speed: [70, 92], jump: [60, 85], dressage: [80, 98], stamina: [75, 95] },
+    },
+    firehorse: {
+      name: 'Огненная лошадка', weight: 0, home: 'magic', hw: 1, size: 0.97, temper: 0.85, magic: { mane: 'fire' },
+      freq: { E: 0.35, A: 0.4, F: 0.5 },
+      stats: { speed: [85, 99], jump: [60, 85], dressage: [50, 75], stamina: [80, 98] },
+    },
+    icehorse: {
+      name: 'Ледяная лошадка', weight: 0, home: 'magic', hw: 1, size: 0.97, temper: 0.6, magic: { mane: 'ice' },
+      freq: { E: 0.85, A: 0.2, G: 0.45, Z: 0.45, Cr: 0.15 },
+      stats: { speed: [70, 90], jump: [65, 90], dressage: [70, 92], stamina: [85, 99] },
+    },
+    skeleton: {
+      name: 'Лошадь-скелет', weight: 0, home: 'cave', hw: 1, size: 1.0, temper: 0.55, magic: { skeleton: true },
+      freq: {},
+      stats: { speed: [65, 88], jump: [60, 85], dressage: [45, 70], stamina: [90, 100] },
+    },
     mix: {
       name: 'Помесь', weight: 0, size: 1, temper: 0.5,
       freq: {},

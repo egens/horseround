@@ -21,7 +21,8 @@ const UI = (() => {
   function init(game) {
     G = game;
     el = {
-      money: $('hud-money'), count: $('hud-count'), clock: $('hud-clock'), gfx: $('btn-gfx'), medals: $('hud-medals'), hint: $('hint'),
+      money: $('hud-money'), count: $('hud-count'), clock: $('hud-clock'), medals: $('hud-medals'), hint: $('hint'),
+      quests: $('btn-quests'), detector: $('btn-detector'), meter: $('detector-meter'), meterBar: $('detector-bar'), fly: $('btn-fly'),
       prompt: $('prompt'), lassoBtn: $('btn-lasso'), ride: $('ride'), rideName: $('ride-name'),
       energy: $('ride-energy'), lead: $('lead'), leadName: $('lead-name'), exercise: $('exercise'),
       exTitle: $('ex-title'), exLine: $('ex-line'), exHint: $('ex-hint'), exLetter: $('ex-letter'),
@@ -30,7 +31,10 @@ const UI = (() => {
     };
     $('btn-horses').onclick = () => openStable(G.atFarm());
     $('btn-inv').onclick = openInventory;
-    el.gfx.onclick = () => G.act.setGfx({ '2d': 'voxel', voxel: 'real', real: '2d' }[G.S.gfx] || '2d');
+    el.quests.onclick = openQuests;
+    $('btn-build').onclick = openBuild;
+    el.detector.onclick = () => G.act.toggleDetector();
+    el.fly.onclick = () => G.act.toggleFly();
     $('btn-help').onclick = openHelp;
     $('btn-sound').onclick = e => { e.currentTarget.textContent = Sound.toggle() ? '🔊' : '🔇'; };
     el.prompt.onclick = () => lastPrompt && lastPrompt.fn();
@@ -51,8 +55,15 @@ const UI = (() => {
   function updateHud(d) {
     set('money', el.money, 'textContent', `🪙 ${d.money}`);
     set('count', el.count, 'textContent', `🐴 ${d.count}/${d.max}`);
-    set('clock', el.clock, 'textContent', d.clock);
-    set('gfx', el.gfx, 'textContent', { voxel: '🧊 Кубики', real: '🌄 Реализм' }[d.gfx] || '🗺️ 2D');
+    set('clock', el.clock, 'textContent', `${d.clock} · ${d.region}`);
+    set('quests', el.quests, 'textContent', d.quests ? `📜 ${d.quests}` : '📜');
+    show(el.detector, !!d.detector);
+    show(el.meter, !!(d.detector && d.detector.on));
+    if (d.detector) {
+      el.detector.classList.toggle('active', d.detector.on);
+      el.meterBar.style.width = `${Math.round(d.detector.signal * 100)}%`;
+      el.meterBar.style.background = d.detector.signal > 0.85 ? '#e03131' : d.detector.signal > 0.5 ? '#f08c00' : '#37b24d';
+    }
     const md = ['gold', 'silver', 'bronze'].filter(k => d.stats[k]).map(k => `${MEDALS[k]}${d.stats[k]}`).join(' ');
     set('medals', el.medals, 'textContent', md);
     show(el.medals, !!md);
@@ -70,6 +81,8 @@ const UI = (() => {
       el.energy.style.width = `${Math.round(d.mounted.energy)}%`;
       el.energy.style.background = d.mounted.energy < 25 ? '#e03131' : d.mounted.energy < 50 ? '#f08c00' : '#37b24d';
       document.querySelectorAll('[data-gait]').forEach(b => b.classList.toggle('active', +b.dataset.gait === d.mounted.gait));
+      show(el.fly, d.mounted.wings);
+      set('fly', el.fly, 'textContent', d.mounted.fly ? '🛬 Сесть' : '🪽 Взлететь');
     }
     show(el.lead, !!d.led);
     if (d.led) set('leadName', el.leadName, 'textContent', `🪢 ${d.led}`);
@@ -133,11 +146,7 @@ const UI = (() => {
     c.style.width = w + 'px';
     c.style.height = hh + 'px';
     c.width = w * dpr; c.height = hh * dpr;
-    const ctx = c.getContext('2d');
-    ctx.scale(dpr, dpr);
-    const k = (w * 0.74) / (112 * h.size);
-    const copy = Object.assign({}, h, { spd: 0, headTurn: 0.12, phase: 0, _ph: null });
-    Draw.horse(ctx, copy, w / 2 - 4 * k, hh / 2, 0, { t: 0.4, scale: k });
+    Voxel.portrait(c, h);
   }
 
   function bar(label, v, color) {
@@ -168,7 +177,7 @@ const UI = (() => {
       const S = G.S;
       let html = canAct ? '' : '<p class="note">Ты далеко от конюшни — можно только посмотреть. Подойди ближе, чтобы ухаживать за лошадьми.</p>';
       html += '<div class="stalls">';
-      for (let i = 0; i < G.MAX_STALLS; i++) {
+      for (let i = 0; i < G.maxStalls(); i++) {
         const h = G.horseInStall(i);
         if (!h) { html += `<div class="stall empty"><div class="num">№${i + 1}</div><div>свободный денник</div></div>`; continue; }
         const ph = Horses.pheno(h);
@@ -183,7 +192,7 @@ const UI = (() => {
         </button>`;
       }
       html += '</div>';
-      return { title: `Конюшня — ${S.horses.length} из ${G.MAX_STALLS} денников`, html };
+      return { title: `Конюшня — ${S.horses.length} из ${G.maxStalls()} денников`, html };
     });
   }
 
@@ -207,6 +216,8 @@ const UI = (() => {
             <tr><td>Отметины</td><td>${Horses.marksText(h)}</td></tr>
             <tr><td>Гены окраса</td><td><code>${Genetics.genotypeText(h.g)}</code></td></tr>
             <tr><td>Нрав</td><td>${h.temper < 0.35 ? 'спокойный 😌' : h.temper < 0.6 ? 'обычный 🙂' : 'горячий 🔥'}</td></tr>
+            ${h.magic ? `<tr><td>Волшебство</td><td><b>${Horses.magicText(h)}</b></td></tr>` : ''}
+            <tr><td>Грива</td><td>${Items.MANE_STYLES[h.maneStyle || 'normal'].name}${h.maneDye ? ', ' + Items.DYES[h.maneDye].name.toLowerCase() : ''}</td></tr>
             <tr><td>Денник</td><td>№${h.stall + 1}</td></tr>
             <tr><td>Цена</td><td>${G.sellPrice(h)} 🪙</td></tr>
           </table>
@@ -233,6 +244,7 @@ const UI = (() => {
         <button class="btn" data-act="paddock" data-id="${h.id}" ${dis || (h.state === 'ridden' ? 'disabled' : '')}>${h.state === 'paddock' ? '🏠 Вернуть в денник' : '🌿 Выпустить в леваду'}</button>
         <button class="btn" data-act="brush" data-id="${h.id}" ${dis}>🪮 Почистить</button>
         <button class="btn pink" data-act="breedmenu" data-id="${h.id}" ${dis || (Horses.isAdult(h) && !(h.sex === 'f' && h.preg) ? '' : 'disabled')}>💕 Скрестить</button>
+        <button class="btn" data-act="mane" data-id="${h.id}" ${dis}>💇 Грива</button>
       </div>`;
       if (!S.tack.saddle || !S.tack.bridle) html += '<p class="note">Чтобы ездить верхом, нужны седло и уздечка из повозки «Корм и амуниция».</p>';
       if (!Horses.isAdult(h)) html += '<p class="note">Ездить верхом и скрещивать можно с 3 лет. Жеребята растут быстро: 1 год = 2 минуты.</p>';
@@ -285,7 +297,14 @@ const UI = (() => {
           <button class="btn small" data-act="buyfood" data-arg="${k}" data-n="1">+1</button>
           <button class="btn small" data-act="buyfood" data-arg="${k}" data-n="5">+5</button></div>`;
       }
-      html += '</div><h4>Амуниция</h4><div class="shop">';
+      html += '</div><h4>Семена для грядок</h4><div class="shop">';
+      for (const [k, c] of Object.entries(Items.CROPS)) {
+        if (!c.seedPrice) continue;
+        html += `<div class="item"><div class="ic">🌱</div><div class="t"><b>${c.name}</b><small>${c.seedPrice} 🪙 · есть ${S.inv[c.seed] || 0} · растёт ~${Math.round(c.time / 60)} мин</small></div>
+          <button class="btn small" data-act="buyitem" data-arg="${c.seed}" data-n="1" data-p="${c.seedPrice}">+1</button>
+          <button class="btn small" data-act="buyitem" data-arg="${c.seed}" data-n="5" data-p="${c.seedPrice}">+5</button></div>`;
+      }
+      html += '</div><h4>Краски для гривы</h4><div class="shop">' + dyeShop(1.2) + '</div><h4>Амуниция</h4><div class="shop">';
       for (const [k, t] of Object.entries(G.TACK)) {
         const own = S.tack[k];
         const sw = own && t.colors
@@ -298,6 +317,16 @@ const UI = (() => {
       html += '</div>';
       return { title: '🛒 Повозка «Корм и амуниция»', html };
     });
+  }
+
+  function dyeShop(k) {
+    const S = G.S;
+    return Object.entries(Items.DYES).map(([key, d]) => {
+      const price = Math.round(d.price * k);
+      const sw = d.color === 'rainbow' ? 'linear-gradient(90deg,#ff6b6b,#ffe066,#69db7c,#4dabf7,#9775fa)' : d.color;
+      return `<div class="item"><div class="ic"><span class="dye" style="background:${sw}"></span></div><div class="t"><b>${d.name}</b><small>${price} 🪙 · есть ${S.inv[d.item] || 0}</small></div>
+        <button class="btn small" data-act="buyitem" data-arg="${d.item}" data-n="1" data-p="${price}">Купить</button></div>`;
+    }).join('');
   }
 
   /* ---------- повозка: продажа ---------- */
@@ -321,6 +350,12 @@ const UI = (() => {
           <button class="btn small green" data-act="sell" data-id="${h.id}" data-arg="${led ? 'led' : ''}" ${near ? '' : 'disabled'}>Продать за ${price} 🪙</button></div>`;
       }
       html += '</div>';
+      const goods = Object.entries(S.inv).filter(([k, n]) => n > 0 && Items.ITEMS[k] && Items.ITEMS[k].sell >= 10);
+      html += '<h4>Урожай, грибы и находки</h4>';
+      if (!goods.length) html += '<p class="small">Тыквы, подсолнухи, грибы и клады тоже можно продать.</p>';
+      html += '<div class="shop">' + goods.map(([k, n]) => `<div class="item"><div class="ic">${Items.icon(k)}</div><div class="t"><b>${Items.name(k)}</b><small>${Items.ITEMS[k].sell} 🪙 · есть ${n}</small></div>
+        <button class="btn small green" data-act="sellitem" data-arg="${k}" data-n="1" ${near ? '' : 'disabled'}>Продать 1</button>
+        ${n > 1 ? `<button class="btn small" data-act="sellitem" data-arg="${k}" data-n="${n}" ${near ? '' : 'disabled'}>Все (${n * Items.ITEMS[k].sell} 🪙)</button>` : ''}</div>`).join('') + '</div>';
       return { title: '💰 Повозка «Продажа лошадей»', html };
     });
   }
@@ -330,15 +365,18 @@ const UI = (() => {
     open(() => {
       const S = G.S, st = S.stats;
       const shirts = ['#e05a8a', '#4dabf7', '#69db7c', '#ffa94d', '#9775fa', '#ffffff', '#343a40'];
-      let html = `<p>Монеты: <b>${S.money} 🪙</b></p><h4>Корм</h4><div class="row">`;
-      for (const [k, f] of Object.entries(G.FOOD)) html += `<span class="chip">${f.icon} ${f.name}: ${S.inv[k] || 0}</span>`;
+      let html = `<p>Монеты: <b>${S.money} 🪙</b></p><h4>В рюкзаке</h4><div class="row">`;
+      const have = Object.entries(S.inv).filter(([k, n]) => n > 0 && Items.ITEMS[k]);
+      html += have.length ? have.map(([k, n]) => `<span class="chip">${Items.icon(k)} ${Items.name(k)}: ${n}</span>`).join('') : '<span class="small">пусто</span>';
       html += '</div><h4>Амуниция</h4><div class="row">';
       for (const [k, t] of Object.entries(G.TACK)) if (S.tack[k]) html += `<span class="chip">${t.icon} ${t.name}</span>`;
       html += `<span class="chip">🪢 Простое лассо</span></div>
         <h4>Моя кофта</h4><div class="swatches">${shirts.map(c => `<button class="sw ${S.player.shirt === c ? 'on' : ''}" style="background:${c}" data-act="shirt" data-c="${c}"></button>`).join('')}</div>
         <h4>Достижения</h4><div class="row">
         <span class="chip">🤠 Поймано: ${st.caught}</span><span class="chip">🐰 Зайчиков: ${st.bunnies || 0}</span><span class="chip">🏁 Скачек: ${st.races || 0}, побед: ${st.wins || 0}</span><span class="chip">🍼 Жеребят: ${st.foals}</span><span class="chip">💰 Продано: ${st.sold}</span>
-        <span class="chip">🥇 ${st.gold}</span><span class="chip">🥈 ${st.silver}</span><span class="chip">🥉 ${st.bronze}</span></div>`;
+        <span class="chip">🥇 ${st.gold}</span><span class="chip">🥈 ${st.silver}</span><span class="chip">🥉 ${st.bronze}</span>
+        <span class="chip">⛏️ Кладов: ${st.treasures || 0}</span><span class="chip">🍄 Грибов: ${st.mushrooms || 0}</span><span class="chip">🧺 Урожаев: ${st.harvest_total || 0}</span>
+        <span class="chip">🔨 Построек: ${G.S.builds.length}</span><span class="chip">📜 Заданий: ${st.questsDone || 0}</span><span class="chip">👻 Привидений: ${st.ghosts || 0}</span></div>`;
       return { title: '🎒 Рюкзак', html };
     });
   }
@@ -389,6 +427,114 @@ const UI = (() => {
         <p>Награда: <b>${r.money} 🪙</b> · Прыжки: ${r.skill}</p>
         <button class="btn green big" data-act="close">Отлично!</button></div>`,
     }));
+  }
+
+  /* ---------- жители и задания ---------- */
+  let npcLine = null;
+  function questCard(q, st, actions) {
+    const p = st ? Quests.progress(q, st) : null;
+    const pct = p ? Math.round(p.cur / p.need * 100) : 0;
+    return `<div class="quest"><b>${esc(q.title)}</b><div>${esc(q.text)}</div>
+      ${p ? `<div class="bar"><span>Прогресс</span><div class="track"><div style="width:${pct}%;background:#69db7c"></div></div><b>${Math.floor(p.cur)}/${p.need}</b></div>` : ''}
+      <div class="small">Награда: ${Quests.rewardText(q.reward)}</div>${actions || ''}</div>`;
+  }
+  function openNpc(n) {
+    npcLine = Quests.hello(n);
+    open(() => {
+      const c = Quests.current(n.id);
+      let html = `<div class="npc"><div class="face">${n.ghost ? '👻' : n.fairy ? '🧚' : '🧑‍🌾'}</div><div class="speech">«${esc(npcLine)}»</div></div>`;
+      if (c && !c.st) html += '<h4>❗ У меня есть для тебя задание</h4>' + questCard(c.q, null, `<button class="btn green" data-act="q-accept" data-arg="${c.q.id}">Возьмусь!</button>`);
+      else if (c && c.st) {
+        const done = Quests.complete(c.q, c.st);
+        html += `<h4>${done ? '❓ Задание выполнено?' : 'Твоё задание'}</h4>` + questCard(c.q, c.st, done ? `<button class="btn green" data-act="q-turnin" data-arg="${c.q.id}">🎁 Сдать задание</button>` : '');
+      } else html += '<p>Ты выполнила все мои задания — спасибо! 💛</p>';
+      html += `<div class="row"><button class="btn" data-act="npc-talk" data-arg="${n.id}">💡 Дай совет</button>${n.shop ? '<button class="btn pink" data-act="npc-shop">🎨 Купить краску</button>' : ''}<button class="btn ghost" data-act="close">Пока!</button></div>`;
+      return { title: `💬 ${n.name} — ${n.role}`, html };
+    });
+  }
+  function openLolaShop() {
+    open(() => ({ title: '🎨 Краски для гривы у Лолы', html: `<p>У тебя: <b>${G.S.money} 🪙</b>. У меня дешевле, чем в повозке!</p><div class="shop">${dyeShop(1)}</div><p class="small">Покрасить гриву: открой лошадь в конюшне → «💇 Грива».</p><button class="btn ghost" data-act="npc" data-arg="lola">← Назад</button>` }));
+  }
+  function openBoard() {
+    open(() => {
+      const b = Quests.boardQuest();
+      let html = '<p>Задания для всех жителей. Выполнишь одно — появится новое.</p>';
+      if (!b.st) html += questCard(b.q, null, '<button class="btn green" data-act="board-accept">Возьмусь!</button>');
+      else {
+        const done = Quests.complete(b.q, b.st);
+        html += questCard(b.q, b.st, done ? '<button class="btn green" data-act="board-turnin">🎁 Получить награду</button>' : '');
+      }
+      return { title: '📋 Доска заданий', html };
+    });
+  }
+  function openQuests() {
+    open(() => {
+      const list = Quests.journal();
+      let html = list.length ? '' : '<p>Пока нет заданий. Поговори с жителями: на ферме — тренер Дядя Миша, на полях — бабушка Галя, в деревне — кузнец, стилистка и доска заданий.</p>';
+      for (const it of list) html += `<div class="small">${esc(it.npc.name)}</div>` + questCard(it.q, it.st, it.done ? '<div class="own">✔ Готово — вернись и сдай задание</div>' : '');
+      html += `<p class="small">Выполнено заданий: ${Quests.doneCount()} из ${Quests.QUESTS.length}.</p><h4>Жители</h4><div class="row">`;
+      html += Quests.NPCS.map(n => `<span class="chip">${Quests.marker(n.id)} ${esc(n.name)}</span>`).join('') + '</div>';
+      return { title: '📜 Задания', html };
+    });
+  }
+
+  /* ---------- стройка и огород ---------- */
+  const bedById = id => G.S.builds.find(b => b.id === id);
+  function openBuild() {
+    open(() => {
+      const S = G.S;
+      let html = `<p>У тебя: <b>${S.money} 🪙</b>. Выбери постройку, потом нажми на землю, куда её поставить.</p><div class="shop">`;
+      for (const [k, d] of Object.entries(Items.BUILDS)) {
+        html += `<div class="item"><div class="ic">${d.icon}</div><div class="t"><b>${d.name}</b><small>${d.desc}</small></div>
+          <button class="btn small green" data-act="build" data-arg="${k}" ${S.money < d.price ? 'disabled' : ''}>${d.price} 🪙</button></div>`;
+      }
+      html += `</div><div class="row"><button class="btn" data-act="build-remove">🧹 Убрать постройку</button></div>`;
+      return { title: '🔨 Стройка', html };
+    });
+  }
+  function openBed(bed) {
+    open(() => {
+      const b = bedById(bed.id), S = G.S;
+      if (!b) return { title: 'Грядка', html: '' };
+      let html = '';
+      if (!b.crop) {
+        html += '<p>Грядка пустая. Что посадим?</p><div class="shop">';
+        for (const [k, c] of Object.entries(Items.CROPS)) {
+          const n = S.inv[c.seed] || 0;
+          html += `<div class="item"><div class="ic">🌱</div><div class="t"><b>${c.name}</b><small>семян: ${n} · урожай: ${Items.icon(c.yield[0])} ×${c.yield[1]}</small></div>
+            <button class="btn small green" data-act="plant" data-id="${b.id}" data-arg="${k}" ${n ? '' : 'disabled'}>Посадить</button></div>`;
+        }
+        html += '</div><p class="small">Семена продаются в повозке «Корм и амуниция».</p>';
+      } else {
+        const c = Items.CROPS[b.crop];
+        html += `<p>Растёт: <b>${c.name}</b></p>${bar('Подросло', b.grow * 100, '#69db7c')}${bar('Влажность', Math.min(100, b.wet / 0.9), '#4dabf7')}`;
+        html += b.wet > 0 ? '<p class="small">Земля влажная — растёт.</p>' : '<p class="note">Земля сухая — полей, иначе не растёт!</p>';
+        html += `<div class="row"><button class="btn" data-act="water" data-id="${b.id}">💧 Полить</button>
+          <button class="btn green" data-act="harvest" data-id="${b.id}" ${b.grow >= 1 ? '' : 'disabled'}>🧺 Собрать</button></div>`;
+      }
+      return { title: '🌱 Грядка', html };
+    });
+  }
+
+  /* ---------- грива ---------- */
+  function openMane(id) {
+    open(() => {
+      const h = G.byId(id), S = G.S;
+      if (!h) return { title: 'Грива', html: '' };
+      let html = `<button class="btn ghost" data-act="horse" data-id="${h.id}" data-can="1">← Назад</button>
+        <div class="pic"><canvas width="300" height="160" data-hid="${h.id}"></canvas></div>
+        <h4>Причёска — бесплатно</h4><div class="row">`;
+      html += Object.entries(Items.MANE_STYLES).map(([k, m]) => `<button class="btn ${h.maneStyle === k ? 'active' : ''}" data-act="mane-style" data-id="${h.id}" data-arg="${k}">${m.icon} ${m.name}</button>`).join('');
+      html += '</div><h4>Цвет гривы и хвоста</h4><div class="row">';
+      html += `<button class="btn ${!h.maneDye ? 'active' : ''}" data-act="mane-dye" data-id="${h.id}" data-arg="">🐴 Свой цвет</button>`;
+      html += Object.entries(Items.DYES).map(([k, d]) => {
+        const sw = d.color === 'rainbow' ? 'linear-gradient(90deg,#ff6b6b,#ffe066,#69db7c,#4dabf7,#9775fa)' : d.color;
+        const n = S.inv[d.item] || 0;
+        return `<button class="btn ${h.maneDye === k ? 'active' : ''}" data-act="mane-dye" data-id="${h.id}" data-arg="${k}" ${n || h.maneDye === k ? '' : 'disabled'}><span class="dye" style="background:${sw}"></span> ${d.name} <small>×${n}</small></button>`;
+      }).join('');
+      html += '</div><p class="small">Краски покупают у стилистки Лолы в деревне или в повозке, а иногда находят в кладах. Одна краска — на одну покраску.</p>';
+      return { title: `💇 Грива: ${h.name}`, html };
+    });
   }
 
   /* ---------- скачки ---------- */
@@ -465,7 +611,8 @@ const UI = (() => {
           <li><b>Стрелки / WASD</b> или <b>нажми на землю</b> — идти (можно держать палец/мышь)</li>
           <li><b>E</b> — открыть то, рядом с чем стоишь (конюшня, повозки, тренировка)</li>
           <li><b>Пробел</b> или <b>нажми на лошадь</b> — бросить лассо; на кавалетти — «ноги выше!»</li>
-          <li><b>1 / 2 / 3</b> — шаг / рысь / галоп, <b>X</b> — слезть с лошади</li>
+          <li><b>1 / 2 / 3</b> — шаг / рысь / галоп, <b>X</b> — слезть с лошади, <b>V</b> — взлететь на пегасе</li>
+          <li><b>B</b> — стройка, <b>J</b> — задания, <b>M</b> — металлоискатель, колесо мыши — приблизить камеру</li>
         </ul>
         <h4>Что можно делать</h4>
         <ul>
@@ -478,15 +625,14 @@ const UI = (() => {
           <li>🏆 <b>Конкур</b> на конкурном поле: 8 препятствий, высота от 60 до 120 см.</li>
           <li>🏁 <b>Скачки</b>: подъезжай верхом к клетчатому столбу у входа в поле. Каждый раз — новая трасса и три соперника.</li>
           <li>🎲 <b>Случайные события</b>: дождь (а после него радуга), зайчики с подарками, подкова на счастье, ярмарка, потерявшаяся лошадь и приглашения на скачки с двойным призом.</li>
+          <li>🗺️ <b>Большой мир:</b> ферма, поле с табуном, Озёрный край, деревня, огромный лес, горы с пещерой и Грибное королевство. Смотри на миникарту!</li>
+          <li>🦄 <b>Волшебные лошадки</b> живут в Грибном королевстве: пегасы с крыльями (на них можно летать!), единороги, огненные и ледяные. А в пещере бродят лошади-скелеты и привидения.</li>
+          <li>💬 <b>Жители</b> дают задания и награды. Значок ❗ — есть новое задание, ❓ — можно сдать.</li>
+          <li>🔨 <b>Стройка и огород:</b> строй грядки, клумбы, фонари, яблоньки и даже маленькую конюшню. Сажай морковь, овёс, тыквы и подсолнухи.</li>
+          <li>📡 <b>Металлоискатель:</b> пищит всё чаще рядом с кладом — копай и находи подковы, монеты, краски для гривы и карту сокровищ.</li>
+          <li>💇 <b>Грива:</b> косички, бантики, ирокез и краски — розовая, голубая, радужная…</li>
           <li>🌙 <b>День и ночь</b> сменяют друг друга (сутки — 8 минут). Ночью табун спит, и подкрасться к лошадям легче.</li>
         </ul>
-        <h4>Графика</h4>
-        <div class="gfx-pick">
-          <button class="card ${G.S.gfx !== 'voxel' ? 'on' : ''}" data-act="gfx" data-arg="2d"><b>🗺️ Вид сверху (2D)</b><span>Рисованная карта. Работает везде, даже без интернета.</span></button>
-          <button class="card ${G.S.gfx === 'voxel' ? 'on' : ''}" data-act="gfx" data-arg="voxel"><b>🧊 Кубики (3D)</b><span>Объёмный мир из вокселей с тенями и фонарями.</span></button>
-          <button class="card ${G.S.gfx === 'real' ? 'on' : ''}" data-act="gfx" data-arg="real"><b>🌄 Реализм (3D)</b><span>Лошади настоящих пропорций с аллюрами, солнце по часам, трава на ветру, вода. Нужен мощный компьютер или планшет.</span></button>
-        </div>
-        <p>Переключать графику можно в любой момент кнопкой вверху. В 3D колесо мыши приближает и отдаляет камеру.</p>
         <p>Игра сохраняется сама.</p>
         <button class="btn green big" data-act="close">Играть!</button>
         <button class="btn ghost small" data-act="reset">Начать заново</button>
@@ -547,7 +693,24 @@ const UI = (() => {
       case 'jump': G.act.startJumping(+arg); break;
       case 'race-go': Events.startRace(); break;
       case 'race-new': Events.prepareRace(); render(); break;
-      case 'gfx': G.act.setGfx(arg); render(); break;
+      case 'buyitem': G.act.buyItem(arg, +b.dataset.n, +b.dataset.p); render(); break;
+      case 'sellitem': G.act.sellItem(arg, +b.dataset.n); render(); break;
+      case 'mane': openMane(id); break;
+      case 'mane-style': G.act.setManeStyle(h, arg); render(); break;
+      case 'mane-dye': G.act.dyeMane(h, arg || null); render(); break;
+      case 'quests': openQuests(); break;
+      case 'npc': openNpc(Quests.npcById(arg)); break;
+      case 'npc-talk': npcLine = Quests.tip(Quests.npcById(arg)); render(); break;
+      case 'q-accept': Quests.accept(Quests.QUESTS.find(q => q.id === arg)); render(); break;
+      case 'q-turnin': { const q = Quests.QUESTS.find(x => x.id === arg); Quests.turnIn(q, G.S.quests[q.id]); render(); break; }
+      case 'npc-shop': openLolaShop(); break;
+      case 'board-accept': Quests.boardAccept(); render(); break;
+      case 'board-turnin': Quests.boardTurnIn(); render(); break;
+      case 'build': Farm.startBuild(arg); break;
+      case 'build-remove': Farm.startRemove(); break;
+      case 'plant': Farm.plant(bedById(id), arg); render(); break;
+      case 'water': Farm.water(bedById(id)); render(); break;
+      case 'harvest': Farm.harvest(bedById(id)); render(); break;
       case 'reset':
         if (!resetArm) { resetArm = true; b.textContent = 'Точно? Всё сотрётся! Нажми ещё раз'; break; }
         resetArm = false;
@@ -559,6 +722,7 @@ const UI = (() => {
 
   return {
     init, updateHud, toast, closeModal, isModalOpen, openStable, openShop, openSell, openInventory,
-    openHelp, openTraining, openJumping, jumpResult, openRace, raceResult, result, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
+    openHelp, openTraining, openJumping, jumpResult, openRace, raceResult, result,
+    openQuests, openNpc, openBoard, openBuild, openBed, openMane, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
   };
 })();

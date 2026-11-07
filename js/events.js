@@ -84,7 +84,9 @@ const Events = (() => {
   /* ================= зайчики ================= */
   const BUNNY_COLORS = [['#b08d6a', '#e9dcc8'], ['#8a7f75', '#d9d2ca'], ['#f1ede6', '#ffffff'], ['#5e4b3c', '#cbb9a4']];
   function spawnBunnies(n) {
-    const areas = [World.FIELD, { x: 1000, y: 1150, w: 650, h: 1150 }, { x: 40, y: 1850, w: 1500, h: 500 }];
+    const areas = [World.FIELD, { x: 1000, y: 1150, w: 650, h: 1150 }, World.LAKELAND, World.FOREST[0], World.FARMLAND];
+    // домики для зайчиков рядом с фермой
+    for (const hh of Farm.bunnyHomes()) areas.push({ x: hh.x - 250, y: hh.y - 250, w: 500, h: 500 }, { x: hh.x - 250, y: hh.y - 250, w: 500, h: 500 });
     for (let i = 0; i < n; i++) {
       const p = randomGrass(pick(areas), 60);
       if (!p) continue;
@@ -339,6 +341,7 @@ const Events = (() => {
     if (medal) S.stats[medal]++;
     S.stats.races = (S.stats.races || 0) + 1;
     if (place === 1) S.stats.wins = (S.stats.wins || 0) + 1;
+    if (place <= 3) S.stats.podiums = (S.stats.podiums || 0) + 1;
     Horses.addTrain(m, 'speed', 1 + (4 - place) * 0.8);
     Horses.addTrain(m, 'stamina', 1);
     m.energy = clamp(m.energy - 20, 0, 100);
@@ -406,114 +409,6 @@ const Events = (() => {
   }
 
   /* ================= рисование 2D ================= */
-  function drawGate(ctx, g, state) {
-    ctx.save();
-    ctx.translate(g.x, g.y);
-    ctx.rotate(g.a);
-    const half = 55;
-    if (state === 'next') {
-      ctx.fillStyle = 'rgba(255,212,59,0.3)';
-      ctx.beginPath(); ctx.ellipse(0, 0, 40, half + 14, 0, 0, Math.PI * 2); ctx.fill();
-    }
-    // лента: на финише — клетчатая
-    const n = 10, seg = (half * 2) / n;
-    for (let k = 0; k < n; k++) {
-      ctx.fillStyle = g.finish ? (k % 2 ? '#111' : '#fff') : (k % 2 ? '#fff' : state === 'done' ? '#2b8a3e' : '#1c7ed6');
-      ctx.fillRect(-3, -half + k * seg, 6, seg + 0.5);
-    }
-    for (const yy of [-half, half]) {
-      Draw.fillEll(ctx, 2, yy + 2, 6, 6, 'rgba(0,0,0,0.25)');
-      Draw.fillEll(ctx, 0, yy, 6, 6, '#f8f9fa');
-      ctx.fillStyle = yy > 0 ? '#e03131' : '#ffffff';
-      ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(-16, yy + (yy > 0 ? 5 : -5)); ctx.lineTo(0, yy + (yy > 0 ? 10 : -10)); ctx.fill();
-    }
-    ctx.restore();
-    Draw.label(ctx, g.finish ? '🏁 ФИНИШ' : String(g.n), g.x, g.y - 75, g.finish ? 15 : 17, state === 'next' ? '#b35c00' : '#2b2b2b');
-  }
-
-  function drawBunny(ctx, b, t) {
-    ctx.save();
-    ctx.globalAlpha = clamp(b.fade, 0, 1);
-    ctx.translate(b.x, b.y);
-    Draw.fillEll(ctx, 1, 2, 9 - b.z * 0.3, 6 - b.z * 0.2, 'rgba(0,0,0,0.18)');
-    ctx.translate(0, -b.z);
-    ctx.rotate(b.angle);
-    const s = 1 + b.z * 0.02;
-    ctx.scale(s, s);
-    Draw.fillEll(ctx, -6, 0, 3.2, 3.2, '#ffffff');               // хвостик
-    Draw.fillEll(ctx, 0, 0, 7.5, 5.2, b.color);                  // тело
-    Draw.fillEll(ctx, 0.5, 0, 4.5, 3, b.belly);
-    Draw.fillEll(ctx, 7, 0, 3.6, 3.3, b.color);                  // голова
-    const wig = b.hop > 0 ? 0.2 : Math.sin(t * 4 + b.x) * 0.15;
-    Draw.fillEll(ctx, 2.5, -2.4, 5.5, 1.5, b.color, -0.25 + wig);  // уши
-    Draw.fillEll(ctx, 2.5, 2.4, 5.5, 1.5, b.color, 0.25 - wig);
-    Draw.fillEll(ctx, 2.8, -2.4, 3.6, 0.7, '#f3b8b8', -0.25 + wig);
-    Draw.fillEll(ctx, 2.8, 2.4, 3.6, 0.7, '#f3b8b8', 0.25 - wig);
-    Draw.fillEll(ctx, 10, 0, 0.9, 0.9, '#e07a8a');
-    ctx.restore();
-  }
-
-  function drawShoe(ctx, t) {
-    if (!shoe) return;
-    ctx.save();
-    ctx.translate(shoe.x, shoe.y);
-    ctx.strokeStyle = '#adb5bd';
-    ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.arc(0, 0, 10, Math.PI * 0.15, Math.PI * 1.85, true); ctx.stroke();
-    ctx.strokeStyle = '#e9ecef'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(0, 0, 10, Math.PI * 0.15, Math.PI * 1.85, true); ctx.stroke();
-    const sp = 10 + Math.sin(t * 6) * 4;
-    ctx.strokeStyle = 'rgba(255,230,90,0.95)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(-sp, -sp); ctx.lineTo(sp, sp); ctx.moveTo(sp, -sp); ctx.lineTo(-sp, sp); ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawStartPost(ctx, t) {
-    ctx.save();
-    ctx.translate(START.x, START.y);
-    Draw.fillEll(ctx, 3, 4, 10, 7, 'rgba(0,0,0,0.2)');
-    Draw.fillEll(ctx, 0, 0, 7, 7, '#495057');
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
-      ctx.fillStyle = (i + j) % 2 ? '#111' : '#fff';
-      ctx.fillRect(2 + i * 6, -20 + j * 6 + Math.sin(t * 4 + i) * 1.5, 6, 6);
-    }
-    ctx.restore();
-    Draw.label(ctx, invite > 0 ? '🏁 СКАЧКИ ×2' : '🏁 СКАЧКИ', START.x, START.y - 38, 15, invite > 0 ? '#c92a2a' : '#3b2a1a');
-  }
-
-  // всё, что лежит на земле, — под лошадьми
-  function draw2d(ctx, visible, t) {
-    drawStartPost(ctx, t);
-    if (race) {
-      const T = race.track;
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 4;
-      ctx.setLineDash([14, 14]);
-      ctx.beginPath(); ctx.moveTo(T.start.x, T.start.y);
-      for (const g of T.gates) ctx.lineTo(g.x, g.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      T.gates.forEach((g, i) => { if (visible(g.x, g.y, 120)) drawGate(ctx, g, i < race.i ? 'done' : i === race.i ? 'next' : ''); });
-    }
-    drawShoe(ctx, t);
-    for (const b of bunnies) if (visible(b.x, b.y, 30)) drawBunny(ctx, b, t);
-  }
-
-  // стрелка к следующим воротам и подписи соперников
-  function drawArrow2d(ctx, t) {
-    if (!race || race.state === 'done') return;
-    const p = G.S.player, g = race.track.gates[Math.min(race.i, race.track.gates.length - 1)];
-    const a = Math.atan2(g.y - p.y, g.x - p.x);
-    ctx.save();
-    ctx.translate(p.x + Math.cos(a) * 80, p.y + Math.sin(a) * 80);
-    ctx.rotate(a);
-    ctx.fillStyle = 'rgba(255,212,0,0.95)'; ctx.strokeStyle = 'rgba(90,60,0,0.8)'; ctx.lineWidth = 2;
-    const b = Math.sin(t * 6) * 4;
-    ctx.beginPath(); ctx.moveTo(20 + b, 0); ctx.lineTo(-6 + b, -14); ctx.lineTo(-6 + b, 14); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.restore();
-    for (const r of race.rivals) Draw.label(ctx, r.rider, r.h.x, r.h.y - 50, 12, '#1c4f8a');
-  }
-
   // дождь и радуга — поверх всего, в экранных координатах (для любой графики)
   function drawScreen(ctx, w, h, k, t) {
     if (rainbowT > 0) {
@@ -602,7 +497,7 @@ const Events = (() => {
 
   return {
     init, update, prompt, hud, startRace, cancelRace, prepareRace, rivals, gates, findHorse,
-    draw2d, drawArrow2d, drawScreen, drawMinimap, drawPreview,
+    drawScreen, drawMinimap, drawPreview,
     weather: () => wet, raining: () => !!rain, bunnies: () => bunnies, shoe: () => shoe, START,
     busy: () => !!race, priceMul: () => (fairT > 0 ? 1.3 : 1), fair: () => fairT > 0,
     get pending() { return pending; },

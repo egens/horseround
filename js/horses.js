@@ -59,6 +59,8 @@ const Horses = (() => {
       marks: o.marks || randomMarks(),
       hunger: 80, energy: 100, mood: 70, clean: 80,
       preg: null,
+      magic: o.magic !== undefined ? o.magic : (B.magic ? Object.assign({}, B.magic) : null),
+      maneStyle: o.maneStyle || 'normal', maneDye: o.maneDye || null,
       state: 'wild', stall: -1,
       x: 0, y: 0, angle: 0, vx: 0, vy: 0, spd: 0, phase: Math.random() * 6, headTurn: 0,
       seed: Math.floor(Math.random() * 1e9),
@@ -77,8 +79,34 @@ const Horses = (() => {
       size: ((mother.size + father.size) / 2) * rand(0.96, 1.04),
       temper: clamp((mother.temper + father.temper) / 2 + rand(-0.1, 0.1), 0.05, 0.95),
       marks: inheritMarks(mother.marks, father.marks),
+      magic: inheritMagic(mother.magic, father.magic),
     });
   }
+
+  // волшебные черты передаются жеребёнку с вероятностью 50% от каждого родителя
+  function inheritMagic(a, b) {
+    a = a || {}; b = b || {};
+    const m = {};
+    for (const k of ['wings', 'horn', 'skeleton']) {
+      const n = (a[k] ? 1 : 0) + (b[k] ? 1 : 0);
+      if (n && Math.random() < (n === 2 ? 0.75 : 0.5)) m[k] = true;
+    }
+    const manes = [a.mane, b.mane].filter(Boolean);
+    if (manes.length && Math.random() < (manes.length === 2 ? 0.75 : 0.5)) m.mane = pick(manes);
+    return Object.keys(m).length ? m : null;
+  }
+  function magicText(h) {
+    const m = h.magic;
+    if (!m) return '';
+    const p = [];
+    if (m.wings) p.push('крылья 🪽');
+    if (m.horn) p.push('рог 🦄');
+    if (m.mane === 'fire') p.push('огненная грива 🔥');
+    if (m.mane === 'ice') p.push('ледяная грива ❄️');
+    if (m.skeleton) p.push('скелет 💀');
+    return p.join(', ');
+  }
+  const isMagic = h => !!(h.magic && (h.magic.wings || h.magic.horn || h.magic.mane));
 
   function pheno(h) {
     const key = Math.floor(h.age * 8);
@@ -134,6 +162,8 @@ const Horses = (() => {
     else if (h.age > 16) p *= 0.6;
     p *= 0.85 + h.mood / 600 + h.clean / 1200;
     if (h.preg) p *= 1.3;
+    const m = h.magic;
+    if (m) p *= (m.wings ? 2 : 1) * (m.horn ? 2 : 1) * (m.mane ? 1.6 : 1) * (m.skeleton ? 1.8 : 1);
     return Math.max(20, Math.round(p / 5) * 5);
   }
 
@@ -142,7 +172,7 @@ const Horses = (() => {
 
   return {
     SKILLS, v, create, foal, pheno, isAdult, sizeOf, skill, addTrain, ageText, sexText, marksText, price,
-    randomName,
+    randomName, magicText, isMagic,
     get nextId() { return nextId; },
     set nextId(v) { nextId = v; },
   };
