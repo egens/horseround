@@ -44,6 +44,57 @@ const Horses = (() => {
     return { elem: k, name: k === 'damp' ? 'сырая с белыми узорами' : E.word, body: E.body, mane: E.mane, legs: E.legs };
   }
 
+  /* ---------- новые волшебные виды: чешуя, зебры, светящиеся узоры, лисы, кости, праздники ---------- */
+  const SCALES = [['#2f9e44', 'зелёная'], ['#1c7ed6', 'синяя'], ['#c92a2a', 'красная'], ['#7048e8', 'фиолетовая'], ['#e67700', 'оранжевая'],
+    ['#0ca678', 'изумрудная'], ['#495057', 'тёмно-серая'], ['#f2b705', 'золотая'], ['#ae3ec9', 'сиреневая'], ['#1098ad', 'бирюзовая']];
+  const ZEBRA = {
+    brown: { c: '#6b4423', word: 'коричневые' }, gold: { c: '#e8a400', word: 'золотые' }, beige: { c: '#cdb48a', word: 'бежевые' },
+    black: { c: '#1b1b1b', word: 'чёрные' }, grey: { c: '#7d7d7d', word: 'серые' }, rainbow: { c: 'rainbow', word: 'радужные' },
+  };
+  const GLOWS = [['#39ff14', 'зелёные'], ['#00e5ff', 'голубые'], ['#ff2bd6', 'розовые'], ['#ffea00', 'жёлтые'], ['#b026ff', 'фиолетовые'], ['#ff6a00', 'оранжевые'], ['#ff1744', 'красные']];
+  const FOXES = {
+    red: { c: '#d9661f', word: 'рыжая' }, fire: { c: '#b8460e', word: 'огненно-рыжая' }, silverblack: { c: '#3b3030', word: 'чёрно-бурая' },
+    silver: { c: '#a8a9ad', word: 'серебристая' }, arctic: { c: '#f1eee6', word: 'белая, как песец' }, sand: { c: '#c98b4a', word: 'песочная' },
+  };
+  const HOLIDAYS = {
+    halloween: { word: 'хэллоуинская: тыквы, летучие мыши и привидения', icon: '🎃', body: '#2d2433', mane: '#ff7b00', legs: '#1b1620' },
+    newyear: { word: 'новогодняя ёлочка с игрушками', icon: '🎄', body: '#2f7a3a', mane: '#1f5a2a', legs: '#24622f' },
+    newyearglow: { word: 'новогодняя светящаяся', icon: '✨', body: '#74c0fc', mane: '#ffffff', legs: '#4dabf7' },
+    easter: { word: 'пасхальная: яички, полосочки и точечки', icon: '🥚', body: '#ffb3d1', mane: '#ffffff', legs: '#f783ac' },
+  };
+  const GLOW_NY = ['#ff6b6b', '#ffd43b', '#69db7c', '#4dabf7', '#cc5de8', '#ff922b', '#f783ac'];
+  const COATS = {
+    rainbow: { name: 'радужная (переливается)', body: '#e9dcff', mane: '#ffffff', legs: '#d0bfff', rarity: 3 },
+    pearl: { name: 'жемчужная', body: '#efe6d8', mane: '#f8f3ea', legs: '#e2d6c3', rarity: 1.6 },
+  };
+  const pickKey = o => { const k = Object.keys(o); return k[Math.floor(Math.random() * k.length)]; };
+  // «random» в описании породы → конкретный цвет или вид
+  function resolveMagic(m) {
+    if (!m) return m;
+    if (m.scales === 'random') m.scales = SCALES[Math.floor(Math.random() * SCALES.length)][0];
+    if (m.zebra === 'random') m.zebra = pickKey(ZEBRA);
+    if (m.glow === 'random') m.glow = GLOWS[Math.floor(Math.random() * GLOWS.length)][0];
+    if (m.fox === 'random') m.fox = pickKey(FOXES);
+    if (m.holiday === 'random') m.holiday = pickKey(HOLIDAYS);
+    if (m.holiday === 'newyearglow' && !m.tint) m.tint = GLOW_NY[Math.floor(Math.random() * GLOW_NY.length)];
+    return m;
+  }
+  const colorWord = (list, c) => (list.find(t => t[0] === c) || [c, 'переливчатая'])[1];
+  function magicLook(h) {
+    const m = h.magic || {}, mix = Genetics.mix;
+    if (m.holiday && HOLIDAYS[m.holiday]) {
+      const D = HOLIDAYS[m.holiday];
+      if (m.holiday === 'newyearglow') { const t = m.tint || '#74c0fc'; return { name: D.word, body: t, mane: mix(t, '#ffffff', 0.6), legs: mix(t, '#000000', 0.15), holiday: m.holiday }; }
+      return { name: D.word, body: D.body, mane: D.mane, legs: D.legs, holiday: m.holiday };
+    }
+    if (m.scales) { const c = m.scales; return { name: m.dragonEyes ? 'розовая чешуя, драконьи глаза' : `чешуйчатая, ${colorWord(SCALES, c)}`, body: c, mane: mix(c, '#000000', 0.35), legs: mix(c, '#000000', 0.25), scales: c }; }
+    if (m.zebra && ZEBRA[m.zebra]) { const Z = ZEBRA[m.zebra]; return { name: `зебра: ${Z.word} полоски`, body: '#f4f1ea', mane: Z.c === 'rainbow' ? '#cc5de8' : Z.c, legs: '#f4f1ea', zebra: Z.c }; }
+    if (m.glow) return { name: `чёрная, светятся ${colorWord(GLOWS, m.glow)} узоры`, body: '#141218', mane: '#0d0c10', legs: '#0d0c10', glow: m.glow };
+    if (m.fox && FOXES[m.fox]) { const F = FOXES[m.fox]; return { name: `лисья, ${F.word}`, body: F.c, mane: F.c, legs: m.fox === 'arctic' ? '#d6d0c4' : '#2b2420', fox: F.c }; }
+    if (h.coat && COATS[h.coat]) { const C = COATS[h.coat]; return { name: C.name, body: C.body, mane: C.mane, legs: C.legs, coat: h.coat, rarityMul: C.rarity }; }
+    return null;
+  }
+
   let nextId = 1;
   const rand = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -67,6 +118,7 @@ const Horses = (() => {
     return {
       face: Math.random() < 0.7 ? src.face : Math.floor(Math.random() * 4),
       legs: src.legs.map(v => (Math.random() < 0.75 ? v : Math.random() < 0.2)),
+      lp: (Math.random() < 0.5 ? a : b).lp || 'blanket',
     };
   }
 
@@ -74,6 +126,13 @@ const Horses = (() => {
     const breed = o.breed || 'mix';
     const B = Genetics.BREEDS[breed];
     const sex = o.sex || (Math.random() < 0.5 ? 'f' : 'm');
+    let coat = o.coat !== undefined ? o.coat : null;
+    if (o.coat === undefined && B.coats) for (const [k, p] of Object.entries(B.coats)) if (!coat && Math.random() < p) coat = k;
+    let marks = o.marks || randomMarks();
+    if (!o.marks && B.marksMaresOnly && sex === 'm') marks = { face: 0, legs: [false, false, false, false] };
+    if (!o.marks) marks.lp = Math.random() < 0.5 ? 'full' : 'blanket';
+    const g = o.g || Genetics.randomGenotype(breed);
+    if (!o.g && B.alwaysSpots && !g.LP[0] && !g.LP[1]) g.LP[0] = true;
     const base = o.base || {
       speed: Math.round(rand(...B.stats.speed)),
       jump: Math.round(rand(...B.stats.jump)),
@@ -84,16 +143,15 @@ const Horses = (() => {
       id: nextId++,
       name: o.name || randomName(sex, o.taken),
       sex, breed,
-      g: o.g || Genetics.randomGenotype(breed),
-      base,
+      g, base, coat,
       train: { speed: 0, jump: 0, dressage: 0, stamina: 0 },
       age: o.age != null ? o.age : rand(3, 12),
       size: o.size || B.size * rand(0.95, 1.05),
       temper: o.temper != null ? o.temper : clamp(B.temper + rand(-0.15, 0.15), 0.05, 0.95),
-      marks: o.marks || randomMarks(),
+      marks,
       hunger: 80, energy: 100, mood: 70, clean: 80,
       preg: null,
-      magic: o.magic !== undefined ? o.magic : (B.magic ? Object.assign({}, B.magic, B.magic.elem === 'crystal' ? { tint: crystalTint() } : {}) : null),
+      magic: o.magic !== undefined ? o.magic : (B.magic ? resolveMagic(Object.assign({}, B.magic, B.magic.elem === 'crystal' ? { tint: crystalTint() } : {})) : null),
       mud: 0,
       maneStyle: o.maneStyle || 'normal', maneDye: o.maneDye || null,
       state: 'wild', stall: -1,
@@ -115,6 +173,7 @@ const Horses = (() => {
       temper: clamp((mother.temper + father.temper) / 2 + rand(-0.1, 0.1), 0.05, 0.95),
       marks: inheritMarks(mother.marks, father.marks),
       magic: inheritMagic(mother.magic, father.magic),
+      coat: [mother.coat, father.coat].filter(Boolean).length && Math.random() < 0.5 ? pick([mother.coat, father.coat].filter(Boolean)) : null,
     });
   }
 
@@ -140,6 +199,17 @@ const Horses = (() => {
     }
     const clouds = (a.cloud ? 1 : 0) + (b.cloud ? 1 : 0);
     if (clouds && Math.random() < (clouds === 2 ? 0.75 : 0.5)) m.cloud = true;
+    // новые черты: кости, чешуя (с рогами и глазами), зебра, узоры, лисий мех, праздник
+    for (const k of ['bones', 'dhorns']) if ((a[k] || b[k]) && Math.random() < (a[k] && b[k] ? 0.75 : 0.5)) m[k] = true;
+    for (const k of ['scales', 'zebra', 'glow', 'fox', 'holiday']) {
+      const src = [a, b].filter(x => x[k]);
+      if (src.length && Math.random() < (src.length === 2 ? 0.75 : 0.5)) {
+        const q = pick(src);
+        m[k] = q[k];
+        if (k === 'scales' && q.dragonEyes) m.dragonEyes = q.dragonEyes;
+        if (k === 'holiday' && q.tint) m.tint = q.tint;
+      }
+    }
     return Object.keys(m).length ? m : null;
   }
   // старые сохранения: wings: true — это пегас
@@ -159,9 +229,16 @@ const Horses = (() => {
     if (m.skeleton) p.push('скелет 💀');
     if (m.elem && ELEMS[m.elem]) p.push(`${m.elem === 'crystal' ? 'кристальная, ' + tintName(m.tint) : ELEMS[m.elem].word} ${ELEMS[m.elem].icon}`);
     if (m.cloud) p.push('летает на облачках ☁️');
+    if (m.bones) p.push('череп на голове и рёбра 💀');
+    if (m.scales) p.push(m.dragonEyes ? 'розовая драконья чешуя и драконьи глаза 🐉💗' : 'драконья чешуя 🐲');
+    if (m.dhorns) p.push('серые драконьи рога');
+    if (m.zebra) p.push(`полоски зебры: ${ZEBRA[m.zebra] ? ZEBRA[m.zebra].word : ''} 🦓`);
+    if (m.glow) p.push(`светящиеся узоры: ${colorWord(GLOWS, m.glow)} ✨`);
+    if (m.fox) p.push('лисий мех и лисий хвост 🦊');
+    if (m.holiday && HOLIDAYS[m.holiday]) p.push(`${HOLIDAYS[m.holiday].word} ${HOLIDAYS[m.holiday].icon}`);
     return p.join(', ');
   }
-  const isMagic = h => !!(h.magic && (h.magic.wings || h.magic.horn || h.magic.mane || h.magic.elem || h.magic.cloud));
+  const isMagic = h => !!(h.magic && (h.magic.wings || h.magic.horn || h.magic.mane || h.magic.elem || h.magic.cloud || h.magic.scales || h.magic.glow || h.magic.fox || h.magic.holiday || h.magic.bones));
   // летать умеют лошади с крыльями и облачные лошадки
   const canFly = h => !!(h && h.magic && (h.magic.wings || h.magic.cloud));
 
@@ -169,14 +246,20 @@ const Horses = (() => {
     const key = Math.floor(h.age * 8);
     if (!h._ph || h._phKey !== key) {
       h._ph = Genetics.phenotype(h.g, h.age);
-      const el = elemLook(h);
-      if (el) h._ph = Object.assign({}, h._ph, el, { stripe: null, roan: false, tob: false, leo: false, dapple: false, greyLevel: 0, pinkSkin: false });
+      const el = elemLook(h) || magicLook(h);
+      if (el) {
+        const rarity = h._ph.rarity * (el.rarityMul || 1);
+        h._ph = Object.assign({}, h._ph, el, { stripe: null, roan: false, tob: false, leo: false, dapple: false, greyLevel: 0, pinkSkin: false, rarity });
+      }
       h._phKey = key;
     }
     return h._ph;
   }
 
   const isAdult = h => h.age >= 3;
+  // ездить верхом можно только с 5 лет
+  const RIDE_AGE = 5;
+  const canRide = h => h.age >= RIDE_AGE;
   const sizeOf = h => h.size * (h.age < 3 ? 0.55 + 0.45 * (h.age / 3) : 1);
   const skill = (h, k) => Math.min(100, Math.round(h.base[k] + h.train[k]));
   function addTrain(h, k, v) { h.train[k] = Math.max(0, Math.min(100 - h.base[k], h.train[k] + v)); }
@@ -222,7 +305,9 @@ const Horses = (() => {
     p *= 0.85 + h.mood / 600 + h.clean / 1200;
     if (h.preg) p *= 1.3;
     const m = h.magic;
-    if (m) p *= (m.wings ? 2 : 1) * (m.horn ? 2 : 1) * (m.mane ? 1.6 : 1) * (m.skeleton ? 1.8 : 1) * (m.elem ? 1.7 : 1) * (m.cloud ? 2 : 1);
+    if (m) p *= (m.wings ? 2 : 1) * (m.horn ? 2 : 1) * (m.mane ? 1.6 : 1) * (m.skeleton ? 1.8 : 1) * (m.elem ? 1.7 : 1) * (m.cloud ? 2 : 1)
+      * (m.bones ? 1.8 : 1) * (m.scales ? 1.5 : 1) * (m.dragonEyes ? 3 : 1) * (m.zebra ? 1.4 : 1) * (m.glow ? 1.9 : 1) * (m.fox ? 1.7 : 1) * (m.holiday ? 2 : 1);
+    if (h.shoes) p *= 1.05;
     if ((h.mud || 0) > 40) p *= 0.95;
     return Math.max(20, Math.round(p / 5) * 5);
   }
@@ -232,7 +317,8 @@ const Horses = (() => {
 
   return {
     SKILLS, v, create, foal, pheno, isAdult, sizeOf, skill, addTrain, ageText, sexText, marksText, price,
-    randomName, magicText, isMagic, canFly, wingType, WING_NAMES, ELEMS, crystalTint,
+    randomName, magicText, isMagic, canFly, wingType, WING_NAMES, ELEMS, crystalTint, canRide, RIDE_AGE,
+    ZEBRA, FOXES, HOLIDAYS, GLOW_NY, resolveMagic,
     get nextId() { return nextId; },
     set nextId(v) { nextId = v; },
   };

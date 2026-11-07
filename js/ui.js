@@ -28,7 +28,15 @@ const UI = (() => {
       exTitle: $('ex-title'), exLine: $('ex-line'), exHint: $('ex-hint'), exLetter: $('ex-letter'),
       lift: $('btn-lift'), modal: $('modal'), mTitle: $('modal-title'), mBody: $('modal-body'),
       toasts: $('toasts'), lasso: $('lasso'),
+      event: $('hud-event'), walk: $('walk'), walkName: $('walk-name'), birthBtn: $('btn-birth'), birth: $('birth'),
     };
+    $('btn-players').onclick = openPlayers;
+    $('btn-tricks').onclick = () => G.act.tricks();
+    $('btn-walk-home').onclick = () => G.act.stopWalk();
+    $('btn-walk-pet').onclick = () => { const h = G.S.horses.find(o => o.state === 'walk'); if (h) G.act.pet(h); };
+    $('btn-walk-play').onclick = () => { const h = G.S.horses.find(o => o.state === 'walk'); if (h) G.act.play(h); };
+    el.birthBtn.onclick = () => G.act.birth();
+    $('birth-ok').onclick = closeBirth;
     $('btn-horses').onclick = () => openStable(G.atFarm());
     $('btn-inv').onclick = openInventory;
     el.quests.onclick = openQuests;
@@ -84,6 +92,19 @@ const UI = (() => {
       show(el.fly, d.mounted.wings);
       set('fly', el.fly, 'textContent', d.mounted.fly ? '🛬 Сесть' : '🪽 Взлететь');
     }
+    show(el.walk, !!d.walk);
+    if (d.walk) set('walkName', el.walkName, 'textContent', `🐴 Гуляем: ${d.walk}`);
+    show(el.birthBtn, !!d.birth && !d.mounted);
+    if (d.birth) set('birthBtn', el.birthBtn, 'textContent', `🍼 Родить жеребёнка (${d.birth})`);
+    // события: поезд, праздник
+    const mmss = v => `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
+    let ev = '';
+    if (d.train && d.train.catchLeft != null) ev = `🚂 Лови лошадей у поезда! ${mmss(d.train.catchLeft)}`;
+    else if (d.train && d.train.moving) ev = '🚂 Поезд едет по пустыне!';
+    else if (d.holiday && d.holiday.k) ev = `${d.holiday.icon} ${d.holiday.name}: ещё ${mmss(d.holiday.left)}`;
+    else if (d.train && d.train.next < 120) ev = `🚂 Поезд через ${mmss(d.train.next)}`;
+    set('event', el.event, 'textContent', ev);
+    show(el.event, !!ev);
     show(el.lead, !!d.led);
     if (d.led) set('leadName', el.leadName, 'textContent', `🪢 ${d.led}`);
 
@@ -164,11 +185,15 @@ const UI = (() => {
     const b = [];
     if (h.state === 'paddock') b.push('🌿 в леваде');
     if (h.state === 'ridden') b.push('🏇 верхом');
-    if (h.preg) b.push(`🍼 ждёт жеребёнка (${Math.ceil(Math.max(0, h.preg.t))} с)`);
+    if (h.preg && !h.preg.ready) b.push(`🍼 ждёт жеребёнка (${Math.ceil(Math.max(0, h.preg.t))} с)`);
     if (h.age < 3) b.push('🍼 малыш');
     if (h.hunger < 25) b.push('😟 голодная');
     if (h.clean < 25) b.push('🟫 грязная');
     if ((h.mud || 0) > 25) b.push('🟤 ноги в грязи');
+    if ((h.wet || 0) > 22) b.push('💧 мокрая');
+    if (h.preg && h.preg.ready) b.push('🍼 готова родить!');
+    if (h.state === 'walk') b.push('🐾 гуляет с тобой');
+    if (h.shoes) b.push('🔧 подкована');
     if (h.state === 'market') b.push(`🏷️ на рынке (${h.ask} 🪙)`);
     return b.map(x => `<span class="badge">${x}</span>`).join('');
   }
@@ -247,17 +272,33 @@ const UI = (() => {
       </div>
       <h4>Покормить</h4><div class="row">`;
       for (const [k, f] of Object.entries(G.FOOD)) {
+        if (f.foalOnly) continue;
         html += `<button class="btn food" data-act="feed" data-id="${h.id}" data-arg="${k}" ${dis || (S.inv[k] ? '' : 'disabled')}>${f.icon} ${f.name} <small>×${S.inv[k] || 0}</small></button>`;
       }
-      html += `</div><h4>Действия</h4><div class="row">
-        <button class="btn green" data-act="mount" data-id="${h.id}" ${dis || (h.state === 'ridden' ? 'disabled' : '')}>🏇 Сесть верхом</button>
-        <button class="btn" data-act="paddock" data-id="${h.id}" ${dis || (h.state === 'ridden' ? 'disabled' : '')}>${h.state === 'paddock' ? '🏠 Вернуть в денник' : '🌿 Выпустить в леваду'}</button>
-        <button class="btn" data-act="brush" data-id="${h.id}" ${dis}>🪮 Почистить</button>
+      const young = !Horses.canRide(h);
+      html += `</div>`;
+      if (h.preg && h.preg.ready) html += `<button class="btn big pink" data-act="birth" data-id="${h.id}" ${dis}>🍼 Родить жеребёнка!</button>`;
+      html += `<h4>Действия</h4><div class="row">
+        <button class="btn green" data-act="mount" data-id="${h.id}" ${dis || (h.state === 'ridden' || young ? 'disabled' : '')}>🏇 Сесть верхом</button>
+        <button class="btn" data-act="paddock" data-id="${h.id}" ${dis || (h.state === 'ridden' || h.state === 'walk' ? 'disabled' : '')}>${h.state === 'paddock' ? '🏠 Вернуть в денник' : '🌿 Выпустить в леваду'}</button>
         <button class="btn pink" data-act="breedmenu" data-id="${h.id}" ${dis || (Horses.isAdult(h) && !(h.sex === 'f' && h.preg) ? '' : 'disabled')}>💕 Скрестить</button>
         <button class="btn" data-act="mane" data-id="${h.id}" ${dis}>💇 Грива</button>
+        <button class="btn" data-act="tricks" data-id="${h.id}" ${dis}>🎭 Трюки</button>
+      </div>
+      <h4>Уход (мини-игры)</h4><div class="row">
+        <button class="btn" data-act="care" data-arg="brush" data-id="${h.id}" ${dis}>🪮 Расчесать</button>
+        <button class="btn" data-act="care" data-arg="wash" data-id="${h.id}" ${dis}>🛁 Помыть</button>
+        <button class="btn" data-act="care" data-arg="shoe" data-id="${h.id}" ${dis}>🔧 Подковать <small>(подков: ${S.inv.horseshoes || 0})</small></button>
+        <button class="btn ghost small" data-act="brush" data-id="${h.id}" ${dis}>⚡ Быстро почистить</button>
+      </div>`;
+      if (young) html += `<h4>🍼 Жеребёнок</h4><div class="row">
+        <button class="btn green" data-act="walk" data-id="${h.id}" ${dis}>${h.state === 'walk' ? '🏠 Закончить прогулку' : '🐾 Гулять'}</button>
+        <button class="btn" data-act="feed" data-id="${h.id}" data-arg="milk" ${dis || (S.inv.milk ? '' : 'disabled')}>🍼 Молоко из бутылочки <small>×${S.inv.milk || 0}</small></button>
+        <button class="btn pink" data-act="pet" data-id="${h.id}" ${dis}>💕 Погладить</button>
+        <button class="btn" data-act="play" data-id="${h.id}" ${dis}>🎾 Поиграть</button>
       </div>`;
       if (!S.tack.saddle || !S.tack.bridle) html += '<p class="note">Чтобы ездить верхом, нужны седло и уздечка из повозки «Корм и амуниция».</p>';
-      if (!Horses.isAdult(h)) html += '<p class="note">Ездить верхом и скрещивать можно с 3 лет. Жеребята растут быстро: 1 год = 2 минуты.</p>';
+      if (young) html += `<p class="note">Ездить верхом можно только с ${Horses.RIDE_AGE} лет, скрещивать — с 3 лет. Жеребята растут быстро: 1 год = 2 минуты. Пока можно гулять, поить молоком, гладить и играть.</p>`;
       return { title: `${h.name}`, html };
     });
   }
@@ -297,6 +338,68 @@ const UI = (() => {
     });
   }
 
+  /* ---------- трюки ---------- */
+  function openTricks(id) {
+    open(() => {
+      const h = G.byId(id);
+      if (!h) return { title: 'Трюки', html: '' };
+      let html = `<p>Что сделать лошади по кличке <b>${esc(h.name)}</b>? ${h.state === 'ridden' ? 'Верхом лошадь делает трюк на месте. N — заржать.' : ''}</p><div class="tricks">`;
+      for (const [k, a] of Object.entries(G.ACTS)) {
+        const off = h.state === 'ridden' && k === 'roll';
+        html += `<button class="btn" data-act="trick" data-id="${h.id}" data-arg="${k}" ${off ? 'disabled' : ''}>${a.icon} ${a.name}</button>`;
+      }
+      html += '</div>';
+      if (h.state !== 'ridden') html += `<button class="btn ghost" data-act="horse" data-id="${h.id}" data-can="1">← Назад</button>`;
+      return { title: `🎭 Трюки: ${h.name}`, html };
+    });
+  }
+
+  /* ---------- игроки: ты и три ИИ-игрока ---------- */
+  function openPlayers() {
+    open(() => {
+      const S = G.S;
+      const rows = [{ name: 'Ты', caught: S.stats.caught, money: S.money, where: World.REGION_NAMES[World.regionAt(S.player.x, S.player.y)], me: true }]
+        .concat((G.S && AI.hud()) || []).sort((a, b) => b.caught - a.caught);
+      let html = '<p>Кто поймает больше лошадей? ИИ-игроки ездят по дорогам мира, ловят диких лошадей и тоже спешат к поезду.</p><table class="players"><tr><th>#</th><th>Игрок</th><th>Поймано</th><th>Монеты</th><th>Где сейчас</th></tr>';
+      rows.forEach((r, i) => { html += `<tr class="${r.me ? 'me' : ''}"><td>${i + 1}</td><td>${r.me ? '⭐ ' : '🤖 '}${esc(r.name)}</td><td>${r.caught}</td><td>${r.money} 🪙</td><td>${esc(r.where || '')}</td></tr>`; });
+      html += '</table>';
+      const tr = Train.hud(), hd = Holidays.hud();
+      const mm = v => `${Math.floor(v / 60)} мин ${Math.floor(v % 60)} с`;
+      html += '<h4>Скоро</h4><ul>';
+      html += `<li>🚂 Поезд с лошадьми в пустыне: ${tr.catchLeft != null ? 'стоит у станции — лови!' : tr.moving ? 'едет!' : 'через ' + mm(tr.next)}</li>`;
+      html += `<li>🎉 Праздник: ${hd.k ? hd.icon + ' ' + hd.name + ' — ещё ' + mm(hd.left) : 'через ' + mm(hd.next) + ' (Хэллоуин, Новый год или Пасха)'}</li>`;
+      html += '</ul>';
+      return { title: '👥 Игроки', html };
+    });
+  }
+
+  /* ---------- заставка: рождение жеребёнка ---------- */
+  let birthStop = null;
+  function birthScene(mare, foal) {
+    el.birth.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    $('birth-ok').classList.add('hidden');
+    $('birth-text').textContent = `У кобылы ${mare.name} рождается малыш…`;
+    const c = $('birth-canvas');
+    requestAnimationFrame(() => {
+      if (!(typeof VoxelExtra !== 'undefined') || !Voxel.ready) { done(); return; }
+      birthStop = VoxelExtra.birthScene(c, mare, foal, done);
+    });
+    function done() {
+      const ph = Horses.pheno(foal);
+      $('birth-text').innerHTML = `🎉 Родился жеребёнок! <b>${esc(foal.name)}</b> — ${Horses.sexText(foal)}, ${esc(ph.name)}${foal.magic ? ', ' + esc(Horses.magicText(foal)) : ''}. ${Horses.v(foal, "Она", "Он")} уже стоит на ножках!`;
+      $('birth-ok').classList.remove('hidden');
+    }
+  }
+  function closeBirth() {
+    if (birthStop) birthStop();
+    birthStop = null;
+    el.birth.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+    UI.toast('🍼 Жеребёнок в деннике. С ним можно гулять, поить молоком, гладить и играть!', 'good');
+  }
+  const isBirthOpen = () => !el.birth.classList.contains('hidden');
+
   /* ---------- повозка: корм и амуниция ---------- */
   function openShop() {
     open(() => {
@@ -307,6 +410,9 @@ const UI = (() => {
           <button class="btn small" data-act="buyfood" data-arg="${k}" data-n="1">+1</button>
           <button class="btn small" data-act="buyfood" data-arg="${k}" data-n="5">+5</button></div>`;
       }
+      html += '</div><h4>Для ухода и жеребят</h4><div class="shop">';
+      html += `<div class="item"><div class="ic">🔧</div><div class="t"><b>Новые подковы (4 шт.)</b><small>25 🪙 · есть ${S.inv.horseshoes || 0} · подковать — мини-игра у лошади</small></div>
+          <button class="btn small" data-act="buyitem" data-arg="horseshoes" data-n="1" data-p="25">+1</button></div>`;
       html += '</div><h4>Семена для грядок</h4><div class="shop">';
       for (const [k, c] of Object.entries(Items.CROPS)) {
         if (!c.seedPrice) continue;
@@ -878,6 +984,13 @@ const UI = (() => {
       case 'buyitem': G.act.buyItem(arg, +b.dataset.n, +b.dataset.p); render(); break;
       case 'sellitem': G.act.sellItem(arg, +b.dataset.n); render(); break;
       case 'mane': openMane(id); break;
+      case 'tricks': openTricks(id); break;
+      case 'trick': G.act.trick(h, arg); break;
+      case 'care': G.act.care(h, arg); break;
+      case 'walk': G.act.walk(h); if (view) render(); break;
+      case 'pet': G.act.pet(h); render(); break;
+      case 'play': G.act.play(h); break;
+      case 'birth': G.act.birth(h); break;
       case 'mane-style': G.act.setManeStyle(h, arg); render(); break;
       case 'mane-dye': G.act.dyeMane(h, arg || null); render(); break;
       case 'quests': openQuests(); break;
@@ -906,5 +1019,6 @@ const UI = (() => {
     init, updateHud, toast, closeModal, isModalOpen, openStable, openShop, openSell, openInventory,
     openHelp, openTraining, openJumping, jumpResult, openRace, raceResult, result,
     openQuests, openNpc, openBoard, openBuild, openBed, openMane, openBoat, openMarket, dressageResult, showLasso, updateLasso, hideLasso, isLassoOpen,
+    openTricks, openPlayers, birthScene, isBirthOpen,
   };
 })();

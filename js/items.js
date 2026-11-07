@@ -27,6 +27,8 @@ const Items = (() => {
     goldShoe: { name: 'Золотая подкова', icon: '🏅', sell: 150 },
     crown: { name: 'Корона графа', icon: '👑', sell: 300 },
     map: { name: 'Карта сокровищ', icon: '🗺️', sell: 0 },
+    milk: { name: 'Бутылочка молока', icon: '🍼', sell: 2 },
+    horseshoes: { name: 'Новые подковы (4 шт.)', icon: '🔧', sell: 15 },
     dye_pink: { name: 'Розовая краска для гривы', icon: '🩷', sell: 0 },
     dye_blue: { name: 'Голубая краска для гривы', icon: '🩵', sell: 0 },
     dye_purple: { name: 'Фиолетовая краска для гривы', icon: '💜', sell: 0 },

@@ -76,7 +76,7 @@ const Voxel = (() => {
     const m = new T.Matrix4(), q = new T.Quaternion(), e = new T.Euler(), one = new T.Vector3(1, 1, 1), p = new T.Vector3();
     for (const b of list) {
       const g = new T.BoxGeometry(b.sx, b.sy, b.sz).toNonIndexed();
-      e.set(b.rx || 0, b.ry || 0, b.rz || 0);
+      e.set(b.rx || 0, b.ry || 0, b.rz || 0, b.order || 'XYZ');
       q.setFromEuler(e);
       p.set(b.x, b.y, b.z);
       m.compose(p, q, one);
@@ -114,21 +114,70 @@ const Voxel = (() => {
   const FIRE = ['#ff3d00', '#ff6d00', '#ff9100', '#ffc400', '#ffea00'];
   const ICE = ['#a5f3fc', '#cffafe', '#67e8f9', '#e0f2fe', '#bae6fd'];
 
-  // цвет гривы/хвоста: краска, огонь, лёд или натуральный
+  // цвет гривы/хвоста: краска, огонь, лёд, особый окрас или натуральный
   function hairColor(h, ph, B, i, mag) {
+    const mix = Genetics.mix;
     if (h.maneDye) {
       const d = Items.DYES[h.maneDye];
       return { c: d.color === 'rainbow' ? Items.RAINBOW[i % Items.RAINBOW.length] : d.color, glow: false };
     }
     const E = ph.elem && Horses.ELEMS[ph.elem];
     if (E) {
-      if (ph.elem === 'crystal') { const t = ph.tint; return { c: [Genetics.mix(t, '#ffffff', 0.55), t, Genetics.mix(t, '#ffffff', 0.25)][i % 3], glow: true }; }
+      if (ph.elem === 'crystal') { const t = ph.tint; return { c: [mix(t, '#ffffff', 0.55), t, mix(t, '#ffffff', 0.25)][i % 3], glow: true }; }
       if (E.maneCols) return { c: E.maneCols[(i * 3) % E.maneCols.length], glow: !!E.maneGlow };
     }
+    if (ph.holiday === 'halloween') return { c: i % 3 === 0 ? '#ff7b00' : '#1b1620', glow: i % 3 === 0 };
+    if (ph.holiday === 'newyear') return { c: i % 4 === 0 ? '#ffd43b' : i % 4 === 2 ? '#e03131' : '#1f5a2a', glow: i % 2 === 0 };
+    if (ph.holiday === 'newyearglow') return { c: mix(ph.body, '#ffffff', 0.45 + (i % 3) * 0.15), glow: true };
+    if (ph.holiday === 'easter') return { c: ['#ffc9de', '#fff3bf', '#d3f9d8', '#d0ebff', '#e5dbff'][i % 5], glow: false };
+    if (ph.zebra) return { c: i % 2 ? '#f4f1ea' : (ph.zebra === 'rainbow' ? RAINBOW7[(i >> 1) % 7] : ph.zebra), glow: false };
+    if (ph.glow) return { c: i % 2 ? ph.glow : mix(ph.glow, '#ffffff', 0.4), glow: true };
+    if (ph.fox) return { c: i % 3 === 0 ? mix(ph.fox, '#ffffff', 0.3) : ph.fox, glow: false };
+    if (ph.scales) return { c: i % 2 ? mix(ph.scales, '#000000', 0.4) : mix(ph.scales, '#ffffff', 0.15), glow: !!mag.dragonEyes && i % 3 === 0 };
+    if (ph.coat === 'rainbow') return { c: RAINBOW7[i % 7], glow: true };
+    if (ph.coat === 'pearl') return { c: i % 2 ? '#fffaf2' : '#efe6d8', glow: i % 4 === 0 };
     if (mag.mane === 'fire') return { c: FIRE[(i * 7) % FIRE.length], glow: true };
     if (mag.mane === 'ice') return { c: ICE[(i * 5) % ICE.length], glow: true };
     if (mag.skeleton) return { c: '#9fe6a0', glow: true };
     return { c: B.fjordMane ? '#efe4cf' : ph.mane, glow: false };
+  }
+  function hslHex(h, sat, l) {
+    const a = sat * Math.min(l, 1 - l);
+    const f = n => { const k = (n + h * 12) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+    return '#' + [f(0), f(8), f(4)].map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+  }
+  const pastel = k => hslHex(((k % 1) + 1) % 1, 0.75, 0.8);
+
+  // особые окрасы корпуса: праздники, чешуя, зебра, светящиеся узоры, лисий мех, радужный и жемчужный
+  function specialCol(ph, h, x, y, z, part, rnd) {
+    const mix = Genetics.mix;
+    if (ph.holiday === 'halloween') return rnd() < 0.1 ? '#4a3f52' : '#3b3242';
+    if (ph.holiday === 'newyear') return ['#2f7a3a', '#24622f', '#3d8f47', '#1f5a2a', '#4f9e55'][(x * 7 + y * 3 + z * 5 + 99) % 5];
+    if (ph.holiday === 'newyearglow') return rnd() < 0.3 ? mix(ph.body, '#ffffff', 0.35) : ph.body;
+    if (ph.holiday === 'easter') {
+      if (part === 'barrel' && (y === 9 || y === 11)) return y === 9 ? '#ffffff' : '#c5f6fa';                  // полосочки
+      return rnd() < 0.12 ? ['#ffd43b', '#74c0fc', '#69db7c', '#cc5de8', '#ffffff'][Math.floor(rnd() * 5)] : '#ffb3d1'; // точечки
+    }
+    if (ph.scales) {
+      const c = ph.scales;
+      if (y <= 8 && part === 'barrel') return mix(c, '#ffffff', 0.35);                                        // светлое брюхо
+      return ((x + (y & 1) + 40) % 2 === 0) ? mix(c, '#ffffff', 0.18) : ((x + y + z + 60) % 3 === 0 ? mix(c, '#000000', 0.22) : c);
+    }
+    if (ph.zebra) {
+      const xx = part === 'head' ? x * 1.4 : part === 'neck' ? x + y * 0.6 : x;
+      const band = Math.floor((xx + Math.sin(y * 0.7 + z * 0.3) * 1.3 + 40) / 1.5);
+      if (band % 2) return '#f4f1ea';
+      return ph.zebra === 'rainbow' ? RAINBOW7[(band >> 1) % 7] : ph.zebra;
+    }
+    if (ph.glow) return rnd() < 0.15 ? '#1d1a22' : '#141218';
+    if (ph.fox) {
+      const white = h.magic && h.magic.fox === 'arctic' ? '#ffffff' : '#f6f1e7';
+      if ((part === 'barrel' && y <= 8) || (part === 'neck' && x >= 9 && y <= 14) || (part === 'barrel' && x >= 6 && y <= 10)) return white;
+      return rnd() < 0.2 ? mix(ph.fox, '#000000', 0.12) : rnd() < 0.15 ? mix(ph.fox, '#ffffff', 0.15) : ph.fox;
+    }
+    if (ph.coat === 'rainbow') return pastel(x * 0.05 + y * 0.04 + z * 0.06);
+    if (ph.coat === 'pearl') return rnd() < 0.2 ? '#fff8ee' : rnd() < 0.2 ? '#e6dccb' : '#efe6d8';
+    return null;
   }
 
   // узор стихийной лошадки: цвет кубика корпуса/шеи/головы
@@ -160,12 +209,26 @@ const Voxel = (() => {
     return ph.body;
   }
 
+  // голова и шея — отдельная часть (кивает, наклоняется), уши — тоже отдельно (прижимаются)
+  const HEAD_PIV = [8, 12.5], EAR_PIV = [11, 17];
+  const isHeadCell = (x, y) => (x >= 8 && y >= 12) || (x >= 7 && y >= 13);
+  function splitHead(src) {
+    const body = new Map(), head = new Map();
+    for (const [k, c] of src) { const [x, y] = k.split('|'); (isHeadCell(+x, +y) ? head : body).set(k, c); }
+    return [body, head];
+  }
+
   function horseCells(h, ph, B) {
     const rnd = World.rng(h.seed);
     const mag = h.magic || {};
-    const cells = new Map(), glow = new Map();
+    const cells = new Map(), glow = new Map(), ears = new Map(), earsGlow = new Map();
     const put = (x, y, z, c) => cells.set(key3(x, y, z), c);
+    const gl = (x, y, z, c) => { cells.delete(key3(x, y, z)); glow.set(key3(x, y, z), c); };
     const neck = [[7, 11, 14, -2, 1], [8, 12, 15, -1, 0], [9, 13, 16, -1, 0], [10, 14, 16, -1, 0]];
+    const finish = () => {
+      const [bc, hcells] = splitHead(cells), [bg, hg] = splitHead(glow);
+      return { cells: bc, glow: bg, headCells: hcells, headGlow: hg, ears, earsGlow };
+    };
     if (mag.skeleton) {
       // позвоночник, рёбра, таз, череп — кости с просветами
       for (let x = -8; x <= 7; x++) { put(x, 12, -1, BONE); put(x, 12, 0, BONE); }
@@ -178,16 +241,21 @@ const Voxel = (() => {
       for (let x = 11; x <= 15; x++) for (let y = 14; y <= 16; y++) for (let z = -1; z <= 0; z++) if (!(x >= 14 && y === 16)) put(x, y, z, BONE);
       put(12, 16, -2, '#111111'); put(12, 16, 1, '#111111');
       glow.set(key3(12, 16, -3), '#7dff8a'); glow.set(key3(12, 16, 2), '#7dff8a');
-      put(11, 17, -1, BONE); put(11, 17, 1, BONE);
-      return { cells, glow };
+      ears.set(key3(11, 17, -1), BONE); ears.set(key3(11, 17, 1), BONE);
+      return finish();
     }
     const blobs = ph.tob ? Array.from({ length: 3 + Math.floor(rnd() * 2) }, () => ({
       x: -7 + rnd() * 15, y: 8 + rnd() * 6, z: -2 + rnd() * 4, r: 2.4 + rnd() * 2,
     })) : [];
     const spot = ph.greyLevel > 0.6 ? '#3a3a3a' : Genetics.mix(ph.body, '#000000', 0.2);
+    const fullLeo = h.marks && h.marks.lp === 'full';
     const bodyCol = (x, y, z, part, top) => {
       if (ph.elem) return elemColor(ph, x, y, z, part, rnd);
+      const sp = specialCol(ph, h, x, y, z, part, rnd);
+      if (sp) return sp;
       if (blobs.some(b => (x - b.x) ** 2 + ((y - b.y) * 0.8) ** 2 + ((z - b.z) * 0.6) ** 2 < b.r * b.r)) return WHITE;
+      // чубарость: пятна по всему телу или «попона» с пятнами на крупе
+      if (ph.leo && fullLeo) return rnd() < 0.28 ? spot : WHITE;
       if (ph.leo && part === 'barrel' && x <= 0 && y >= 9) return rnd() < 0.2 ? spot : WHITE;
       let c = ph.body;
       if (ph.stripe && top && z >= -1 && z <= 0) c = ph.stripe;
@@ -205,19 +273,26 @@ const Voxel = (() => {
     for (const [x, y0, y1, z0, z1] of neck) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) put(x, y, z, bodyCol(x, y, z, 'neck', false));
     // голова и морда
     for (let x = 11; x <= 13; x++) for (let y = 14; y <= 16; y++) for (let z = -1; z <= 0; z++) put(x, y, z, bodyCol(x, y, z, 'head', false));
-    const muzzle = (ph.pinkSkin || h.marks.face === 3) ? '#d9a597' : Genetics.mix(ph.body, '#000000', 0.35);
+    let muzzle = (ph.pinkSkin || h.marks.face === 3) ? '#d9a597' : Genetics.mix(ph.body, '#000000', 0.35);
+    if (ph.fox || (h.breed === 'przewalski')) muzzle = '#efe4cf';
+    if (ph.zebra) muzzle = '#2b2420';
+    if (ph.holiday === 'easter') muzzle = '#ff8fab';
     for (let x = 14; x <= 15; x++) for (let y = 14; y <= 15; y++) for (let z = -1; z <= 0; z++) put(x, y, z, muzzle);
     // отметины на лбу (видны сверху)
-    if (h.marks.face) {
+    if (h.marks.face && !ph.holiday && !ph.scales && !ph.glow && !ph.zebra) {
       const len = h.marks.face === 1 ? [11, 11] : [11, 13];
       for (let x = len[0]; x <= len[1]; x++) for (let z = -1; z <= 0; z++) put(x, 16, z, WHITE);
       if (h.marks.face === 3) for (let x = 11; x <= 13; x++) for (let y = 14; y <= 15; y++) { put(x, y, -1, WHITE); put(x, y, 0, WHITE); }
     }
     put(12, 16, -2, '#1a1412'); put(12, 16, 1, '#1a1412');               // глаза
-    const ear = Genetics.mix(ph.body, '#000000', 0.2);
-    put(11, 17, -1, ear); put(11, 17, 1, ear);                              // уши
+    // уши: у лисьих — острые с чёрными кончиками
+    const ear = ph.fox ? ph.fox : ph.scales ? Genetics.mix(ph.scales, '#000000', 0.3) : Genetics.mix(ph.body, '#000000', 0.2);
+    ears.set(key3(11, 17, -1), ear); ears.set(key3(11, 17, 1), ear);
+    if (ph.fox) { ears.set(key3(11, 18, -1), '#1b1412'); ears.set(key3(11, 18, 1), '#1b1412'); }
+    if (ph.zebra) { ears.set(key3(11, 18, -1), '#1b1b1b'); ears.set(key3(11, 18, 1), '#1b1b1b'); }
     // грива: причёска и цвет
-    const style = h.maneStyle || 'normal';
+    let style = h.maneStyle || 'normal';
+    if (B.przMane && style === 'normal') style = 'mohawk';                   // торчащая грива у Пржевальского и зебры
     let i = 0;
     const hair = (x, y, z) => {
       const hc = hairColor(h, ph, B, i++, mag);
@@ -227,7 +302,7 @@ const Voxel = (() => {
       if (style === 'short' && x === 7) continue;
       hair(x, y1 + 1, -1);
       if (B.fjordMane && !h.maneDye && !mag.mane) put(x, y1 + 1, 0, '#2a211b'); else hair(x, y1 + 1, 0);
-      if (style === 'mohawk' || (mag.mane && style === 'normal')) { hair(x, y1 + 2, -1); hair(x, y1 + 2, 0); if (style === 'mohawk') hair(x, y1 + 3, 0); }
+      if (style === 'mohawk' || (mag.mane && style === 'normal')) { hair(x, y1 + 2, -1); hair(x, y1 + 2, 0); if (style === 'mohawk' && !B.przMane) hair(x, y1 + 3, 0); }
       if (style === 'long' || (B.longMane && style === 'normal')) for (let y = y1 - 3; y <= y1; y++) hair(x, y, 1 + (x === 7 ? 1 : 0));
       if (style === 'braids' && (x === 7 || x === 9)) {
         for (let y = y1 - 3; y <= y1; y++) hair(x, y, 1 + (x === 7 ? 1 : 0));
@@ -242,6 +317,14 @@ const Voxel = (() => {
       glow.set(key3(12, 17, -1), '#fff3bf'); glow.set(key3(12, 17, 0), '#fff3bf');
       glow.set(key3(12, 18, 0), '#ffe066'); glow.set(key3(13, 19, 0), '#ffd43b'); glow.set(key3(13, 20, 0), '#fff9db');
     }
+    // серые драконьи рога: загнуты назад
+    if (mag.dhorns) for (const z of [-2, 1]) {
+      for (const [x, y, c] of [[12, 17, '#9a9da3'], [11, 18, '#8d9096'], [10, 19, '#7c7f86'], [9, 19, '#6c6f75'], [8, 20, '#5c5f66']]) put(x, y, z, c);
+    }
+    // драконьи глаза: розовые, светятся
+    if (mag.dragonEyes) for (const z of [-2, 1]) { gl(12, 16, z, mag.dragonEyes); gl(13, 16, z, Genetics.mix(mag.dragonEyes, '#ffffff', 0.4)); put(12, 15, z, '#2b0a1a'); }
+    // гребень из шипов вдоль спины у чешуйчатых
+    if (ph.scales) for (const x of [-7, -4, -1, 2, 5]) { put(x, 13, -1, Genetics.mix(ph.scales, '#000000', 0.4)); put(x, 13, 0, Genetics.mix(ph.scales, '#000000', 0.4)); put(x, 14, 0, Genetics.mix(ph.scales, '#ffffff', 0.2)); }
     // украшения стихий на спине
     if (ph.elem === 'crystal') {
       const lt = Genetics.mix(ph.tint, '#ffffff', 0.5);
@@ -259,43 +342,167 @@ const Voxel = (() => {
     } else if (ph.elem === 'ice') {
       for (const x of [-5, -1, 3]) glow.set(key3(x, 13, -1), '#e7f5ff');
     }
-    return { cells, glow };
+    // череп на голове и рёбра на теле
+    if (mag.bones) {
+      for (const z of [-3, 2]) for (const x of [-4, -2, 0, 2, 4]) for (let y = 8; y <= 11; y++) put(x, y, z, y === 8 ? BONE2 : BONE);
+      for (let x = -7; x <= 6; x++) { put(x, 12, -1, BONE); put(x, 12, 0, BONE); }
+      for (const z of [-3, 2]) for (let y = 10; y <= 11; y++) { put(-7, y, z, BONE2); put(-6, y, z, BONE); }
+      for (let x = 11; x <= 15; x++) for (let y = 14; y <= 16; y++) for (let z = -2; z <= 1; z++) {
+        if (x >= 14 && y === 16) continue;
+        if (z === -2 || z === 1 || y === 16 || x === 15) put(x, y, z, (x + y) % 3 ? BONE : BONE2);
+      }
+      for (const z of [-2, 1]) { put(12, 15, z, '#0d0d0d'); put(12, 16, z, '#0d0d0d'); put(13, 16, z, '#1a1a1a'); }   // глазницы
+      put(15, 15, -1, '#0d0d0d'); put(15, 15, 0, '#0d0d0d');                                                         // ноздри
+      for (let x = 13; x <= 15; x++) for (const z of [-2, 1]) put(x, 14, z, x % 2 ? '#0d0d0d' : '#ffffff');         // зубы
+      ears.set(key3(11, 17, -1), BONE); ears.set(key3(11, 17, 1), BONE);
+    }
+    // светящиеся узоры у чёрных пещерных лошадей
+    if (ph.glow) {
+      for (const k of [...cells.keys()]) {
+        const [x, y, z] = k.split('|').map(Number);
+        if (y < 7) continue;
+        const v = Math.sin(x * 0.85 + Math.sin(y * 0.9 + z * 0.5) * 1.8);
+        if (Math.abs(v) < 0.22 || (y === 16 && x >= 11 && x <= 13)) gl(x, y, z, ph.glow);
+      }
+      gl(12, 16, -2, ph.glow); gl(12, 16, 1, ph.glow);
+    }
+    // праздничные узоры
+    if (ph.holiday === 'halloween') {
+      for (const z of [-3, 2]) for (const [cx, cy] of [[-4, 9.5], [3, 10]]) {
+        for (let x = cx - 2; x <= cx + 2; x++) for (let y = 8; y <= 12; y++) {
+          const d = ((x - cx) / 2.4) ** 2 + ((y - cy) / 2.1) ** 2;
+          if (d < 1) put(x, y, z, d < 0.4 ? '#ff922b' : '#f76707');
+        }
+        gl(cx - 1, Math.round(cy) + 1, z, '#ffd43b'); gl(cx + 1, Math.round(cy) + 1, z, '#ffd43b');            // глаза тыквы
+        for (let x = cx - 1; x <= cx + 1; x++) gl(x, Math.round(cy) - 1, z, '#ffd43b');                        // улыбка
+        put(cx, 12, z, '#2b8a3e');                                                                              // хвостик тыквы
+      }
+      for (const z of [-3, 2]) for (const [bx, by] of [[-1, 11], [6, 9]]) {                                     // летучие мыши
+        for (const [dx, dy] of [[0, 0], [-1, 1], [1, 1], [-2, 1], [2, 1], [-3, 2], [3, 2]]) put(bx + dx, by + dy, z, '#0b0b0b');
+      }
+      for (const z of [-3, 2]) {                                                                                // привидения
+        for (let y = 8; y <= 10; y++) { put(-7, y, z, '#ffffff'); put(-6, y, z, '#ffffff'); }
+        put(-7, 11, z, '#ffffff'); put(-6, 11, z, '#ffffff'); put(-7, 10, z, '#111111');
+      }
+      gl(12, 16, -2, '#ff7b00'); gl(12, 16, 1, '#ff7b00');
+      // тыква и привидение на спине — видно сверху
+      for (let x = -3; x <= 1; x++) for (let z = -3; z <= 2; z++) if (((x + 1) / 2.4) ** 2 + ((z + 0.5) / 2.6) ** 2 < 1) put(x, 12, z, (x + z) % 2 ? '#f76707' : '#ff922b');
+      gl(-2, 12, -1, '#ffd43b'); gl(0, 12, -1, '#ffd43b'); for (let x = -2; x <= 0; x++) gl(x, 12, 1, '#ffd43b');
+      for (let x = -7; x <= -5; x++) for (let z = -1; z <= 0; z++) put(x, 12, z, '#ffffff');
+      put(-6, 12, -1, '#111111');
+      for (const [x, z] of [[4, -2], [5, 1]]) for (const [dx, dz] of [[0, 0], [-1, -1], [1, -1], [-2, -1], [2, -1]]) put(x + dx, 12, z + dz, '#0b0b0b');
+    } else if (ph.holiday === 'newyear') {
+      const toys = ['#e03131', '#ffd43b', '#4dabf7', '#f8f9fa', '#cc5de8', '#ff922b'];
+      for (const k of [...cells.keys()]) {
+        const [x, y, z] = k.split('|').map(Number);
+        const surf = z === -3 || z === 2 || y === 12 || (z === -2 || z === 1) && x >= 7;
+        if (!surf) continue;
+        if ((x * 5 + y * 3 + z * 7 + 300) % 11 === 0) gl(x, y, z, toys[(x + y + 30) % toys.length]);                  // игрушки
+        else if ((x + y + 40) % 6 === 0 && y >= 9) gl(x, y, z, '#ffe066');                                               // гирлянда
+      }
+      gl(12, 17, -1, '#ffd43b'); gl(12, 18, -1, '#fff3bf');                                                      // звезда
+    } else if (ph.holiday === 'newyearglow') {
+      for (const [k, c] of [...cells]) { cells.delete(k); glow.set(k, c); }
+      for (const [k, c] of [...ears]) { ears.delete(k); earsGlow.set(k, c); }
+    } else if (ph.holiday === 'easter') {
+      const eggs = [['#ffd43b', '#ff8fab'], ['#74c0fc', '#ffffff'], ['#69db7c', '#ffd43b'], ['#cc5de8', '#fff3bf']];
+      let n = 0;
+      for (const z of [-3, 2]) for (const [cx, cy] of [[-5, 9.5], [-0.5, 10], [4, 9.5]]) {
+        const [c1, c2] = eggs[(n++ + (h.seed % 4)) % eggs.length];
+        for (let x = Math.floor(cx - 1); x <= Math.ceil(cx + 1); x++) for (let y = 8; y <= 12; y++) {
+          if (((x - cx) / 1.3) ** 2 + ((y - cy) / 1.9) ** 2 < 1) put(x, y, z, y === Math.round(cy) ? c2 : c1);
+        }
+      }
+      // яички на спине
+      for (const [cx, cz, e] of [[-5, -1, 0], [-1, 0, 1], [3, -1, 2]]) {
+        const [c1, c2] = eggs[(e + (h.seed % 4)) % eggs.length];
+        for (let x = cx - 1; x <= cx + 1; x++) for (let z = cz - 1; z <= cz + 1; z++) put(x, 12, z, x === cx ? c2 : c1);
+      }
+    }
+    // радужная шерсть переливается: часть кубиков светится
+    if (ph.coat === 'rainbow' || ph.coat === 'pearl') {
+      for (const [k, c] of [...cells]) if (rnd() < (ph.coat === 'rainbow' ? 0.28 : 0.12)) { cells.delete(k); glow.set(k, Genetics.mix(c, '#ffffff', 0.25)); }
+    }
+    return finish();
   }
 
   // грязь: уровень 0–4 — до какой высоты ноги в грязи
   const MUD = ['#5a3d22', '#6b4a2b', '#4a321c', '#7a5634'];
   const mudLevel = h => Math.min(4, Math.floor((h.mud || 0) / 22));
+  // мокрая лошадь: шерсть темнее и блестит
+  const wetLevel = h => ((h.wet || 0) > 60 ? 2 : (h.wet || 0) > 22 ? 1 : 0);
+  function wetten(map, wl) {
+    if (!wl || !map) return;
+    for (const [k, c] of map) map.set(k, Genetics.mix(c, '#0b1a2a', 0.13 * wl));
+  }
   function legCells(h, ph, i) {
-    const cells = new Map();
+    const cells = new Map(), glow = new Map();
     const mag = h.magic || {};
     const white = h.marks.legs[i] || ph.tob;
     const ml = mudLevel(h), rnd = World.rng(h.seed + i * 31);
     const muddy = (c, y) => (ml && y <= -7 + ml + 1 && (y < -7 + ml + 1 || rnd() < 0.6) ? MUD[Math.floor(rnd() * MUD.length)] : c);
+    const mix = Genetics.mix;
     for (let y = -7; y <= -1; y++) for (let x = -1; x <= 0; x++) for (let z = -1; z <= 0; z++) {
       if (mag.skeleton) {
         if (x === 0 && z === 0 || y === -4 || y === -7) cells.set(key3(x, y, z), y === -7 ? '#8d8476' : y === -4 ? BONE2 : BONE);
         continue;
       }
-      let c = y >= -2 ? ph.body : ph.legs;
+      let c = y >= -2 ? ph.body : ph.legs, g = false;
       if (ph.elem) {
         c = ph.elem === 'rainbow' ? RAINBOW7[(i * 2 + (y + 7)) % 7] : ph.elem === 'crystal' || ph.elem === 'stone' || ph.elem === 'water' || ph.elem === 'fire' || ph.elem === 'leaf' || ph.elem === 'damp'
           ? elemColor(ph, x + i * 3, y + 7, z, 'leg', rnd) : y >= -2 ? ph.body : ph.legs;
         if (ph.elem === 'leaf' && y <= -3) c = '#5c3d1e';
         if (y === -7) c = ph.elem === 'ice' ? '#d0ebff' : ph.elem === 'sun' ? '#f08c00' : ph.elem === 'crystal' ? Genetics.mix(ph.tint, '#000000', 0.35) : '#2b2420';
+      } else if (ph.zebra) {
+        c = (y + 20) % 2 === 0 ? (ph.zebra === 'rainbow' ? RAINBOW7[(y + 7 + i) % 7] : ph.zebra) : '#f4f1ea';
+        if (y === -7) c = '#2b2420';
+      } else if (ph.fox) {
+        c = y <= -4 ? (mag.fox === 'arctic' ? '#e9e4da' : '#2b2420') : ph.fox;
+        if (y === -7) c = '#1b1412';
+      } else if (ph.scales) {
+        c = (y + x + z + 20) % 2 ? mix(ph.scales, '#000000', 0.2) : ph.scales;
+        if (y === -7) c = '#3a3a3a';
+      } else if (ph.glow) {
+        c = '#141218';
+        if (y === -3 || (y === -5 && (x + z) % 2)) g = true, c = ph.glow;
+        if (y === -7) c = '#0b0a0d';
+      } else if (ph.holiday) {
+        const H = ph.holiday;
+        c = H === 'halloween' ? (y === -3 ? '#ff7b00' : '#2b2430') : H === 'newyear' ? (y === -4 ? '#e03131' : '#24622f') : H === 'easter' ? ((y + 20) % 2 ? '#ffffff' : '#ffb3d1') : ph.body;
+        if (H === 'newyear' && y === -4) g = true;
+        if (y === -7) c = H === 'easter' ? '#f783ac' : '#2b2420';
+      } else if (ph.coat === 'rainbow') {
+        c = pastel(i * 0.13 + y * 0.05);
+        if (y === -7) c = '#cfc4e8';
       } else {
         if (ph.tob && y < -2) c = WHITE;
         else if (white && y <= -4) c = WHITE;
+        if (ph.leo && h.marks.lp === 'full' && y >= -3 && rnd() < 0.3) c = mix(ph.body, '#000000', 0.2);
         if (y === -7) c = '#2b2420';
       }
-      cells.set(key3(x, y, z), muddy(c, y));
+      if (y === -7 && h.shoes) c = '#b8bec7';                                  // подкова
+      (g ? glow : cells).set(key3(x, y, z), muddy(c, y));
     }
-    return cells;
+    return { cells, glow };
   }
 
   function tailCells(h, ph, B) {
     const cells = new Map(), glow = new Map();
     const mag = h.magic || {};
     const pts = [[-1, -1], [-1, -2], [-2, -2], [-2, -3], [-2, -4], [-3, -4], [-3, -5], [-3, -6], [-3, -7]];
+    if (mag.fox && !mag.skeleton) {
+      // пушистый лисий хвост с белым кончиком
+      const fur = ph.fox || '#d9661f', tip = mag.fox === 'arctic' ? '#ffffff' : '#f6f1e7';
+      const path = [[-1, 0], [-2, 0], [-3, -1], [-4, -1], [-5, -2], [-6, -2], [-7, -3], [-8, -3], [-9, -2], [-10, -1]];
+      path.forEach(([x, y], k) => {
+        const rr = k < 2 ? 1 : k > 7 ? 1 : 2;
+        for (let dy = -rr; dy <= rr; dy++) for (let z = -1 - (rr > 1 ? 1 : 0); z <= (rr > 1 ? 1 : 0); z++) {
+          if (Math.abs(dy) + Math.abs(z + 0.5) > rr + 0.6) continue;
+          cells.set(key3(x, y + dy, z), k >= 8 ? tip : (k + dy + z) % 4 === 0 ? Genetics.mix(fur, '#000000', 0.12) : fur);
+        }
+      });
+      return { cells, glow };
+    }
     pts.forEach(([x, y], i) => {
       for (const z of [-1, 0]) {
         if (mag.skeleton) { if (i % 2 === 0 && z === 0) cells.set(key3(x, y, z), BONE); continue; }
@@ -303,6 +510,7 @@ const Voxel = (() => {
         (hc.glow ? glow : cells).set(key3(x, y, z), hc.c);
       }
     });
+    if (ph.zebra && !h.maneDye) for (const z of [-1, 0]) { cells.set(key3(-3, -7, z), '#1b1b1b'); cells.set(key3(-3, -6, z), '#1b1b1b'); }
     return { cells, glow };
   }
 
@@ -337,8 +545,10 @@ const Voxel = (() => {
       return { cells, glass: false };
     }
     if (type === 'dragon') {
-      const mem = pickBy(h, ['#8b1e3f', '#2d6a4f', '#5a189a', '#b5651d', '#264653']);
-      const bone = '#3d2b1f';
+      // у чешуйчатых лошадей крылья того же цвета, что и тело
+      const sc = h.magic && h.magic.scales;
+      const mem = sc ? Genetics.mix(sc, '#ffffff', 0.08) : pickBy(h, ['#8b1e3f', '#2d6a4f', '#5a189a', '#b5651d', '#264653']);
+      const bone = sc ? Genetics.mix(sc, '#000000', 0.45) : '#3d2b1f';
       for (let z = 0; z <= 11; z++) {
         const minX = -Math.round(z * 0.75) - 1;
         for (let x = minX; x <= 1; x++) {
@@ -482,39 +692,67 @@ const Voxel = (() => {
         group.add(w);
       }
     }
+    if (!opts.ghost) group.traverse(n => n.layers.enable(1));
     return { group, legs, shirt: look.shirt };
   }
 
+  // устройство модели: group (место и поворот) → pose (наклон тела вокруг опоры) → content (сама лошадь);
+  // голова с шеей и уши — на своих шарнирах
   function makeHorseObj(h, ph, material) {
     const B = Genetics.BREEDS[h.breed] || Genetics.BREEDS.mix;
     const mag = h.magic || {};
-    const group = new T.Group();
+    const group = new T.Group(), pose = new T.Group(), content = new T.Group();
+    group.add(pose); pose.add(content);
     const mk = geo => { const m = new T.Mesh(geo, material || mat); m.castShadow = !material; m.receiveShadow = !material; return m; };
+    const gl = geo => (material ? mk(geo) : glowMesh(geo));
     const hc = horseCells(h, ph, B);
-    group.add(mk(voxelGeometry(hc.cells, V, h.seed)));
-    if (hc.glow.size) group.add(material ? mk(voxelGeometry(hc.glow, V, 1)) : glowMesh(voxelGeometry(hc.glow, V, 1)));
+    const wl = wetLevel(h);
+    wetten(hc.cells, wl); wetten(hc.headCells, wl); wetten(hc.ears, wl);
+    if (hc.cells.size) content.add(mk(voxelGeometry(hc.cells, V, h.seed)));
+    if (hc.glow.size) content.add(gl(voxelGeometry(hc.glow, V, 1)));
+    const head = new T.Group();
+    head.position.set(HEAD_PIV[0] * V, HEAD_PIV[1] * V, 0);
+    content.add(head);
+    const headIn = new T.Group();
+    headIn.position.set(-HEAD_PIV[0] * V, -HEAD_PIV[1] * V, 0);
+    head.add(headIn);
+    if (hc.headCells.size) headIn.add(mk(voxelGeometry(hc.headCells, V, h.seed + 3)));
+    if (hc.headGlow.size) headIn.add(gl(voxelGeometry(hc.headGlow, V, 2)));
+    const ears = new T.Group();
+    ears.position.set(EAR_PIV[0] * V, EAR_PIV[1] * V, 0);
+    headIn.add(ears);
+    const earIn = new T.Group();
+    earIn.position.set(-EAR_PIV[0] * V, -EAR_PIV[1] * V, 0);
+    ears.add(earIn);
+    if (hc.ears.size) earIn.add(mk(voxelGeometry(hc.ears, V, h.seed + 5)));
+    if (hc.earsGlow.size) earIn.add(gl(voxelGeometry(hc.earsGlow, V, 5)));
     const legs = [];
     const LP = [[5, -1.5], [5, 1.5], [-6, -1.5], [-6, 1.5]];
+    const allGlow = ph.holiday === 'newyearglow';
     LP.forEach(([x, z], i) => {
       const pivot = new T.Group();
       pivot.position.set(x * V, 7 * V, z * V);
-      pivot.add(mk(voxelGeometry(legCells(h, ph, i), V, h.seed + i)));
+      const lc = legCells(h, ph, i);
+      wetten(lc.cells, wl);
+      if (lc.cells.size) pivot.add(allGlow ? gl(voxelGeometry(lc.cells, V, h.seed + i)) : mk(voxelGeometry(lc.cells, V, h.seed + i)));
+      if (lc.glow.size) pivot.add(gl(voxelGeometry(lc.glow, V, 6)));
       if (mag.cloud) {
         // облачко под копытом
         const cc = new Map();
         for (let cx = -2; cx <= 1; cx++) for (let cz = -2; cz <= 1; cz++) if (Math.abs(cx + 0.5) + Math.abs(cz + 0.5) < 3) cc.set(key3(cx, -9, cz), (cx + cz) % 2 ? '#ffffff' : '#e7f5ff');
         cc.set(key3(-1, -8, -1), '#ffffff'); cc.set(key3(0, -8, 0), '#ffffff'); cc.set(key3(-1, -8, 0), '#f1f3f5');
-        pivot.add(material ? mk(voxelGeometry(cc, V, 5)) : glowMesh(voxelGeometry(cc, V, 5)));
+        pivot.add(gl(voxelGeometry(cc, V, 5)));
       }
-      group.add(pivot);
+      content.add(pivot);
       legs.push(pivot);
     });
     const tail = new T.Group();
     tail.position.set(-8 * V, 12.5 * V, 0.5 * V);
     const tc = tailCells(h, ph, B);
-    if (tc.cells.size) tail.add(mk(voxelGeometry(tc.cells, V, h.seed + 9)));
-    if (tc.glow.size) tail.add(material ? mk(voxelGeometry(tc.glow, V, 1)) : glowMesh(voxelGeometry(tc.glow, V, 1)));
-    group.add(tail);
+    wetten(tc.cells, wl);
+    if (tc.cells.size) tail.add(allGlow ? gl(voxelGeometry(tc.cells, V, h.seed + 9)) : mk(voxelGeometry(tc.cells, V, h.seed + 9)));
+    if (tc.glow.size) tail.add(gl(voxelGeometry(tc.glow, V, 1)));
+    content.add(tail);
     const wings = [];
     if (mag.wings) {
       const type = Horses.wingType(mag.wings);
@@ -526,18 +764,90 @@ const Voxel = (() => {
         const m = def.glass && !material ? new T.Mesh(geo, glassMat) : mk(geo);
         if (s < 0) { m.scale.z = -1; }
         pivot.add(m);
-        group.add(pivot);
+        content.add(pivot);
         wings.push({ pivot, s, f: FLAP[type] || FLAP.pegasus });
       }
     }
-    return { group, legs, tail, wings, ph, rider: null, riderKey: '' };
+    return { group, pose, content, head, ears, legs, tail, wings, ph, rider: null, riderKey: '' };
+  }
+
+  // поза для действия лошади: на дыбы, брыкнуть, поесть траву, поваляться… (h.act ставит game.js)
+  const smooth = k => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
+  function actPose(h) {
+    const a = h.act;
+    if (!a) return null;
+    const p = Math.min(1, a.t / a.d), tt = a.t;
+    const q = smooth(Math.min(p / 0.18, (1 - p) / 0.18, 1));      // плавно в начале и в конце
+    const e = Math.sin(Math.PI * p);
+    const P = { k: a.k, px: 0, py: 0, pitch: 0, roll: 0, up: 0, yaw: 0, head: 0, headYaw: undefined, ears: 0, legs: null };
+    switch (a.k) {
+      case 'rear':
+        P.px = -6 * V; P.pitch = 0.72 * q; P.head = 0.25 * q; P.ears = -0.2 * q;
+        P.legs = [1.0 * q + Math.sin(tt * 9) * 0.35 * q, 0.8 * q + Math.sin(tt * 9 + 1.6) * 0.35 * q, -0.25 * q, -0.25 * q];
+        break;
+      case 'kick':
+        P.px = 5 * V; P.pitch = -0.3 * e; P.head = -0.35 * e; P.ears = 1.0 * e;
+        P.legs = [0.15 * e, 0.15 * e, -1.35 * e, -1.15 * e];
+        break;
+      case 'graze':
+        P.px = 5 * V; P.pitch = -0.08 * q; P.head = -1.4 * q + Math.sin(tt * 5) * 0.04 * q; P.headYaw = Math.sin(tt * 0.6) * 0.25 * q;
+        break;
+      case 'roll': {
+        P.py = 3 * V;
+        let r, kick = 0;
+        if (p < 0.18) r = 1.45 * smooth(p / 0.18);
+        else if (p > 0.82) r = 1.45 * smooth((1 - p) / 0.18);
+        else { const w = (p - 0.18) / 0.64; r = 1.45 + 0.95 * Math.max(0, Math.sin(w * Math.PI * 3)); kick = 1; }
+        P.roll = r;
+        const fold = Math.min(1, r / 1.45);
+        P.legs = [0.9 * fold + Math.sin(tt * 11) * 0.5 * kick, 0.7 * fold + Math.sin(tt * 11 + 2) * 0.5 * kick, -0.8 * fold + Math.sin(tt * 11 + 1) * 0.5 * kick, -0.6 * fold + Math.sin(tt * 11 + 3) * 0.5 * kick];
+        P.head = 0.3 * fold;
+        break;
+      }
+      case 'liftLeg':
+        P.legs = [0, 0, 0, 0]; P.legs[a.leg || 0] = ((a.leg || 0) >= 2 ? -0.9 : 1.15) * q; P.head = -0.1 * q;
+        break;
+      case 'ears': P.ears = 1.25 * q; P.head = -0.12 * q; break;
+      case 'neigh': P.head = 0.6 * q + Math.sin(tt * 34) * 0.05 * q; P.ears = -0.25 * q; P.px = -6 * V; P.pitch = 0.08 * q; break;
+      case 'lookUp': P.head = 0.8 * q; break;
+      case 'lookDown': P.head = -0.8 * q; break;
+      case 'bow': P.px = 5 * V; P.pitch = -0.12 * q; P.head = -1.05 * q; P.legs = [0.75 * q, -0.1 * q, 0, 0]; break;
+      case 'scratch': P.head = -0.95 * q; P.headYaw = 0.5 * q; P.legs = [0, 1.35 * q + Math.sin(tt * 16) * 0.3 * q, 0, 0]; break;
+      case 'dance':
+        P.yaw = Math.sin(tt * 2.2) * 0.45 * q; P.roll = Math.sin(tt * 7) * 0.1 * q; P.up = Math.abs(Math.sin(tt * 7)) * 0.35 * q;
+        P.legs = [0, 1, 2, 3].map(i => Math.max(0, Math.sin(tt * 7 + i * Math.PI / 2)) * (i < 2 ? 0.9 : -0.6) * q);
+        P.head = Math.sin(tt * 3.5) * 0.25 * q;
+        break;
+      case 'back': P.head = 0.15 * q; P.ears = 0.4 * q; break;
+      case 'play': P.up = Math.abs(Math.sin(tt * 6)) * 0.6 * q; P.yaw = Math.sin(tt * 3) * 0.6 * q; P.head = Math.sin(tt * 6) * 0.3 * q; P.legs = [0.6, 0.6, -0.4, -0.4].map(v => v * Math.abs(Math.sin(tt * 6)) * q); break;
+      case 'lie':                                                   // лежит на боку (новорождённый)
+        P.py = 3 * V; P.roll = 1.45; P.legs = [0.9, 0.7, -0.8, -0.6]; P.head = 0.25 + Math.sin(tt * 2) * 0.1;
+        break;
+      case 'getup': {                                                // жеребёнок встаёт: на грудь, передние ноги, задние ноги
+        P.py = 3 * V;
+        const L = 7 * V;
+        if (p < 0.25) { P.roll = 1.45; P.legs = [0.9, 0.7, -0.8, -0.6]; P.head = 0.2 + Math.sin(tt * 3) * 0.15; }
+        else if (p < 0.45) {
+          const k = smooth((p - 0.25) / 0.2);
+          P.roll = 1.45 * (1 - k); P.up = -L * 0.8 * k; P.legs = [0.9 + 0.7 * k, 0.7 + 0.9 * k, -0.8 - 0.8 * k, -0.6 - 1 * k]; P.head = 0.2 + 0.2 * k;
+        } else if (p < 0.7) {
+          const k = smooth((p - 0.45) / 0.25), w = Math.sin(tt * 18) * 0.05 * (1 - k);
+          P.px = -6 * V; P.pitch = 0.32 * k + w; P.up = -L * 0.8 * (1 - k * 0.5); P.legs = [1.6 * (1 - k), 1.6 * (1 - k), -1.6, -1.6]; P.head = 0.4 - 0.2 * k;
+        } else {
+          const k = smooth((p - 0.7) / 0.3), w = Math.sin(tt * 14) * 0.06 * (1 - k);
+          P.px = -6 * V; P.pitch = 0.32 * (1 - k) + w; P.up = -L * 0.4 * (1 - k); P.legs = [0, 0, -1.6 * (1 - k), -1.6 * (1 - k)]; P.head = 0.2 * (1 - k); P.roll = w;
+        }
+        break;
+      }
+    }
+    return P;
   }
 
   function disposeObj(o) {
     o.group.traverse(n => { if (n.geometry) n.geometry.dispose(); });
     scene.remove(o.group);
   }
-  const horseKey = h => `${h._phKey}|${h.maneStyle || ''}|${h.maneDye || ''}|${JSON.stringify(h.magic || 0)}|${mudLevel(h)}`;
+  const horseKey = h => `${h._phKey}|${h.maneStyle || ''}|${h.maneDye || ''}|${JSON.stringify(h.magic || 0)}|${mudLevel(h)}|${wetLevel(h)}|${h.coat || ''}|${h.shoes ? 1 : 0}`;
 
   /* ---------- земля ---------- */
   function groundTexture() {
@@ -671,6 +981,87 @@ const Voxel = (() => {
         L.push(box(px, hgt / 2, pz, sw, hgt, sw, ['#7f8c99', '#6b7785', '#95a2ad'][i % 3]));
         L.push(box(px, hgt + 0.3, pz, sw * 0.85, 0.6, sw * 0.85, '#ffffff'));
       }
+    } else if (k === 'hill') {
+      // травянистый холм
+      const cs = ['#7f9a5e', '#8fab68', '#9cb873'];
+      for (let i = 0; i < 3; i++) L.push(box(x + (r() - 0.5) * R * 0.2, 0.7 + i * 1.3, z + (r() - 0.5) * R * 0.2, R * (1.9 - i * 0.55), 1.4, R * (1.6 - i * 0.45), cs[i]));
+      if (r() < 0.6) L.push(box(x + R * 0.3, 3.9, z - R * 0.2, 1.4, 1, 1.2, '#8a8a80'));
+    } else if (k === 'bush') {
+      for (let i = 0; i < 5; i++) L.push(box(x + (r() - 0.5) * R * 1.2, 0.5 + r() * 0.6, z + (r() - 0.5) * R * 1.2, R * 0.8, R * 0.7, R * 0.8, r() < 0.5 ? '#4f8f3a' : '#3f7a2f'));
+      if (r() < 0.4) L.push(box(x, 1.1, z, 0.35, 0.35, 0.35, ['#e03131', '#ffd43b', '#ff8fab'][Math.floor(r() * 3)]));
+    } else if (k === 'grass') {
+      // высокая трава в степи
+      for (let i = 0; i < 7; i++) {
+        const hgt = 0.6 + r() * 1.2;
+        L.push(box(x + (r() - 0.5) * R * 0.9, hgt / 2, z + (r() - 0.5) * R * 0.9, 0.18, hgt, 0.18, ['#c9c46a', '#a9b25a', '#d9c77a', '#93a24e'][i % 4]));
+      }
+    } else if (k === 'cavewall') {
+      // камни кольца пещерки
+      const hgt = 6 + r() * 4;
+      L.push(box(x, hgt / 2, z, R * 1.7, hgt, R * 1.7, ['#5e5b62', '#6c6970', '#4f4c54'][Math.floor(r() * 3)]));
+      L.push(box(x + (r() - 0.5) * R, hgt + 0.6, z + (r() - 0.5) * R, R * 1.1, 1.2, R * 1.1, '#7f7c84'));
+      if (r() < 0.3) L.push(box(x, hgt + 1.3, z, R * 0.9, 0.3, R * 0.9, '#5c940d'));
+    } else if (k === 'cliff') {
+      const n = 3 + Math.floor(r() * 3);
+      for (let i = 0; i < n; i++) {
+        const a = r() * 6.28, d = r() * R * 0.5, sw = R * (0.6 + r() * 0.5), hgt = 3 + r() * R * 0.9;
+        L.push(box(x + Math.cos(a) * d, hgt / 2, z + Math.sin(a) * d, sw, hgt, sw, ['#6c6970', '#7f7c84', '#5e5b62', '#74717a'][i % 4]));
+      }
+    } else if (k === 'spire') {
+      // чёрный каменный шпиль с трещинами лавы
+      const n = 4;
+      for (let i = 0; i < n; i++) {
+        const w = R * (1.3 - i * 0.28), hgt = 2.6 + r() * 1.2;
+        L.push(box(x + (r() - 0.5) * 0.6, 1.3 + i * 2.6, z + (r() - 0.5) * 0.6, w, hgt, w * (0.8 + r() * 0.3), i % 2 ? '#2b2427' : '#3a3236'));
+        if (r() < 0.6) Gl.push(box(x + w * 0.5, 1 + i * 2.6, z, 0.12, 1.4, 0.4, r() < 0.5 ? '#ff6b1a' : '#ffa94d'));
+      }
+    } else if (k === 'basalt') {
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * 6.28, hgt = 1 + r() * 3;
+        L.push(box(x + Math.cos(a) * R * 0.5, hgt / 2, z + Math.sin(a) * R * 0.5, R * 0.55, hgt, R * 0.55, i % 2 ? '#2f292c' : '#403739'));
+      }
+    } else if (k === 'deadtree') {
+      L.push(box(x, 2, z, 0.6, 4, 0.6, '#3d2f28'));
+      for (let i = 0; i < 4; i++) {
+        const a = r() * 6.28, len = 1.4 + r() * 1.4;
+        L.push(box(x + Math.cos(a) * len / 2, 2.6 + i * 0.5, z + Math.sin(a) * len / 2, len, 0.22, 0.22, '#4a3a30', { ry: -a, rz: 0.4 }));
+      }
+    } else if (k === 'bigbone') {
+      // огромная грудная клетка: рёбра аркой над землёй
+      const B1 = '#ece6d6', B2 = '#d6cdb6', len = R * 1.6, ang = r() * Math.PI, ca = Math.cos(ang), sa = Math.sin(ang);
+      const hgt = R * 0.75;
+      L.push(box(x, hgt, z, len, 0.7, 0.7, B1, { ry: -ang }));                        // позвоночник
+      for (let i = 0; i < 5; i++) {
+        const t = -len / 2 + (i + 0.5) * len / 5, cx = x + ca * t, cz = z + sa * t;
+        const rr = R * 0.55 * (1 - Math.abs(i - 2) * 0.12);
+        // ребро — дуга из отрезков от позвоночника вниз к земле
+        for (let j = 0; j < 6; j++) {
+          const a1 = j / 6 * Math.PI, a2 = (j + 1) / 6 * Math.PI;
+          const y1 = hgt - rr + Math.cos(a1) * rr * 0 + Math.sin(a1 + Math.PI / 2) * rr, y2 = hgt - rr + Math.sin(a2 + Math.PI / 2) * rr;
+          const s1 = Math.sin(a1) * rr * 1.1, s2 = Math.sin(a2) * rr * 1.1;
+          const yy1 = Math.max(0.1, hgt * (0.5 + 0.5 * Math.cos(a1))), yy2 = Math.max(0.1, hgt * (0.5 + 0.5 * Math.cos(a2)));
+          for (const side of [-1, 1]) {
+            const lz1 = side * s1, lz2 = side * s2;
+            const my = (yy1 + yy2) / 2, mz = (lz1 + lz2) / 2, segL = Math.hypot(yy2 - yy1, lz2 - lz1);
+            const tilt = Math.atan2(lz2 - lz1, yy2 - yy1);
+            L.push(box(cx - sa * mz, my, cz + ca * mz, 0.5, segL + 0.15, 0.5, j % 2 ? B1 : B2, { rx: tilt, ry: -ang, order: 'YXZ' }));
+          }
+          void y1; void y2;
+        }
+      }
+      L.push(box(x + ca * len * 0.62, 1, z + sa * len * 0.62, R * 0.7, 1.6, R * 0.55, B1, { ry: -ang }));   // череп
+      L.push(box(x + ca * len * 0.7, 1.3, z + sa * len * 0.7, 0.5, 0.5, R * 0.6, '#3a2f28', { ry: -ang }));
+    } else if (k === 'bigskull') {
+      // огромный череп
+      const B1 = '#ece6d6', ang = r() * Math.PI * 2, ca = Math.cos(ang), sa = Math.sin(ang);
+      L.push(box(x, R * 0.55, z, R * 1.2, R * 1.1, R * 1.1, B1, { ry: -ang }));
+      L.push(box(x + ca * R * 0.8, R * 0.35, z + sa * R * 0.8, R * 0.8, R * 0.6, R * 0.8, '#d6cdb6', { ry: -ang }));
+      for (const sd of [-1, 1]) L.push(box(x + ca * R * 0.55 - sa * sd * R * 0.3, R * 0.7, z + sa * R * 0.55 + ca * sd * R * 0.3, R * 0.3, R * 0.3, R * 0.3, '#2b211c'));
+      for (let i = -2; i <= 2; i++) L.push(box(x + ca * R * 1.15 - sa * i * R * 0.13, R * 0.12, z + sa * R * 1.15 + ca * i * R * 0.13, R * 0.1, R * 0.2, R * 0.1, '#ffffff'));
+    } else if (k === 'smallbone') {
+      const ang = r() * Math.PI, ca = Math.cos(ang), sa = Math.sin(ang), len = 0.6 + r() * 1;
+      L.push(box(x, 0.15, z, len, 0.22, 0.22, '#ece6d6', { ry: -ang }));
+      for (const sd of [-1, 1]) L.push(box(x + ca * len / 2 * sd, 0.2, z + sa * len / 2 * sd, 0.35, 0.35, 0.45, '#ddd4bf', { ry: -ang }));
     } else if (k === 'rock') {
       const n = 3 + Math.floor(r() * 3);
       for (let i = 0; i < n; i++) {
@@ -784,6 +1175,15 @@ const Voxel = (() => {
     portals.push({ g, swirl, inner, light });
   }
 
+  // контур неровного пятна (остров, озеро) в координатах сцены: x → x, y карты → y фигуры (потом поворот)
+  function blobShape(B, off) {
+    const pts = World.blobPoly(B, off, 80);
+    const sh = new T.Shape();
+    pts.forEach((q, i) => (i ? sh.lineTo(q.x * K, q.y * K) : sh.moveTo(q.x * K, q.y * K)));
+    sh.closePath();
+    return sh;
+  }
+
   /* ---------- небесные острова ---------- */
   let skyGroup = null;
   function addSky() {
@@ -792,14 +1192,14 @@ const Voxel = (() => {
     const grass = new T.MeshLambertMaterial({ color: '#86c95a' });
     const dirt = new T.MeshLambertMaterial({ color: '#8a6a44' });
     for (const I of World.SKY_ISLANDS) {
-      const top = new T.Mesh(new T.CylinderGeometry(1, 1, 0.8, 48), grass);
-      top.scale.set(I.rx * K, 1, I.ry * K);
-      top.position.set(I.x * K, -0.39, I.y * K);
+      const top = new T.Mesh(new T.ExtrudeGeometry(blobShape(I, 0), { depth: 0.8, bevelEnabled: false }), grass);
+      top.rotation.x = Math.PI / 2;
+      top.position.set(0, 0.01, 0);
       top.receiveShadow = true;
       skyGroup.add(top);
       const depth = 10 + I.rx * K * 0.25;
       const under = new T.Mesh(new T.CylinderGeometry(1, 0.12, depth, 16, 3), dirt);
-      under.scale.set(I.rx * K * 0.98, 1, I.ry * K * 0.98);
+      under.scale.set(I.rx * K * 0.92, 1, I.ry * K * 0.92);
       under.position.set(I.x * K, -0.8 - depth / 2, I.y * K);
       skyGroup.add(under);
       // каменные выступы снизу
@@ -979,10 +1379,11 @@ const Voxel = (() => {
 
     // озёра
     for (const L of World.LAKES) {
-      const m = new T.Mesh(new T.CircleGeometry(1, 40), new T.MeshLambertMaterial({ color: L.magic ? '#c084fc' : '#3f8fc0', transparent: true, opacity: 0.82, emissive: L.magic ? '#6d28d9' : '#000000' }));
-      m.scale.set(L.rx * K, L.ry * K, 1);
-      m.rotation.x = -Math.PI / 2;
-      m.position.set(L.x * K, 0.06, L.y * K);
+      const col = L.magic ? '#c084fc' : L.lava ? '#ff6b1a' : L.ice ? '#cfe9ff' : '#3f8fc0';
+      const m = new T.Mesh(new T.ShapeGeometry(blobShape(L, 0)), new T.MeshLambertMaterial({ color: col, transparent: !L.lava, opacity: 0.82, emissive: L.magic ? '#6d28d9' : L.lava ? '#e8590c' : '#000000' }));
+      m.rotation.x = Math.PI / 2;
+      m.position.y = 0.06;
+      m.material.side = T.DoubleSide;
       scene.add(m);
     }
     buildShrooms();
@@ -1429,6 +1830,41 @@ const Voxel = (() => {
     if (target) { mound.position.set(target.x * K, 0, target.y * K); mound.children[1].position.y = 1.2 + Math.sin(t * 6) * 0.3; }
   }
 
+  /* ---------- сияние за лошадьми со светящимися узорами ---------- */
+  let trail = null;
+  const TRAIL_N = 900;
+  function initTrail() {
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(new Float32Array(TRAIL_N * 3), 3));
+    g.setAttribute('color', new T.Float32BufferAttribute(new Float32Array(TRAIL_N * 3), 3));
+    const m = new T.PointsMaterial({ size: 0.9, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false, blending: T.AdditiveBlending });
+    trail = { pts: new T.Points(g, m), life: new Float32Array(TRAIL_N), base: new Float32Array(TRAIL_N * 3), i: 0 };
+    trail.pts.frustumCulled = false;
+    scene.add(trail.pts);
+  }
+  function emitTrail(x, y, color, move, s) {
+    const n = Math.random() < 0.3 + move * 1.5 ? 1 + Math.floor(move * 3) : 0;
+    const c = rgb(color), pos = trail.pts.geometry.attributes.position;
+    for (let k = 0; k < n; k++) {
+      const i = trail.i = (trail.i + 1) % TRAIL_N;
+      trail.life[i] = 1;
+      pos.setXYZ(i, x * K + (Math.random() - 0.5) * 3 * s, (1.5 + Math.random() * 5) * s, y * K + (Math.random() - 0.5) * 3 * s);
+      trail.base[i * 3] = c.r; trail.base[i * 3 + 1] = c.g; trail.base[i * 3 + 2] = c.b;
+    }
+  }
+  function updateTrail(dt) {
+    const pos = trail.pts.geometry.attributes.position, col = trail.pts.geometry.attributes.color;
+    for (let i = 0; i < TRAIL_N; i++) {
+      const l = trail.life[i];
+      if (l <= 0) { if (col.getX(i) || col.getY(i) || col.getZ(i)) col.setXYZ(i, 0, 0, 0); continue; }
+      const nl = Math.max(0, l - dt * 0.6);
+      trail.life[i] = nl;
+      pos.setY(i, pos.getY(i) + dt * 0.5);
+      col.setXYZ(i, trail.base[i * 3] * nl, trail.base[i * 3 + 1] * nl, trail.base[i * 3 + 2] * nl);
+    }
+    pos.needsUpdate = true; col.needsUpdate = true;
+  }
+
   /* ---------- инициализация ---------- */
   function init() {
     T = window.THREE;
@@ -1470,6 +1906,8 @@ const Voxel = (() => {
     scene.add(outside);
 
     buildStatic();
+    initTrail();
+    if ((typeof VoxelExtra !== 'undefined')) VoxelExtra.init({ T, scene, renderer, camera, K, V, box, boxGeometry, meshOf, glowMesh, voxelGeometry, key3, mat, glowMat, glassMat, makeHorseObj, makePersonObj, syncHorse, poseHorse, actPose, chunk, flushChunks, textSprite, rgb, hemi, sun });
     resize();
     addEventListener('resize', resize);
     ready = true;
@@ -1495,23 +1933,40 @@ const Voxel = (() => {
       e.key = key;
       objs.set(h.id, e);
       scene.add(e.group);
+      e.group.traverse(n => n.layers.enable(1));                    // слой 1 — отражаются в лужах
     }
     e.seen = true;
+    e.h = h;
+    poseHorse(e, h, x, y, angle, o);
+  }
+  // поставить модель лошади на место и в позу (ноги, голова, уши, крылья, всадник)
+  function poseHorse(e, h, x, y, angle, o) {
+    const ph = e.ph;
     const s = Horses.sizeOf(h);
     const lift = o.lift || 0;
     const fly = o.fly || 0;
     const hover = h.magic && h.magic.cloud ? 1.3 + Math.sin(o.t * 2 + (h.seed % 9)) * 0.35 : 0;
-    e.group.position.set(x * K, hover + lift * 2.6 * s + fly * 9 + (fly ? Math.sin(o.t * 2) * 0.4 : 0), y * K);
-    e.group.rotation.set(0, -angle, lift * 0.25 + fly * 0.08);
+    const A = fly ? null : actPose(h);
+    e.group.position.set(x * K, hover + lift * 2.6 * s + fly * 9 + (fly ? Math.sin(o.t * 2) * 0.4 : 0) + (A ? A.up * s : 0), y * K);
+    e.group.rotation.set(0, -angle + (A ? A.yaw : 0), lift * 0.25 + fly * 0.08);
     e.group.scale.setScalar(s);
+    const px = A ? A.px : 0, py = A ? A.py : 0;
+    e.pose.position.set(px, py, 0);
+    e.content.position.set(-px, -py, 0);
+    e.pose.rotation.set(A ? A.roll : 0, 0, A ? A.pitch : 0);
     const move = Math.min(1, (h.spd || 0) / 110);
+    // голова кивает на рыси и галопе, при действиях наклоняется
+    const bob = move > 0.25 && !fly && !A ? Math.sin((h.phase || 0) * 2) * 0.08 * move : 0;
+    e.head.rotation.set(0, A && A.headYaw != null ? A.headYaw : (h.headTurn || 0) * 0.7, (A ? A.head : 0) + bob + (fly ? 0.15 : 0));
+    e.ears.rotation.z = A ? -A.ears : 0;
     e.legs.forEach((l, i) => {
       const diag = (i === 0 || i === 3) ? 1 : -1;
       if (fly) l.rotation.z = (i < 2 ? 0.7 : -0.5) * fly;
+      else if (A && A.legs) l.rotation.z = A.legs[i];
       else l.rotation.z = lift ? (i < 2 ? 0.9 : -0.6) * lift : Math.sin(h.phase || 0) * diag * 0.55 * move;
     });
     e.tail.rotation.y = Math.sin(o.t * 2.2 + (h.seed % 7)) * 0.35;
-    e.tail.rotation.z = move * 0.5 + fly * 0.4;
+    e.tail.rotation.z = move * 0.5 + fly * 0.4 + (A && A.k === 'kick' ? 0.6 : 0);
     for (const w of e.wings) {
       const f = w.f;
       const flap = fly ? Math.sin(o.t * f.speed) * f.amp : move > 0.6 ? Math.sin(o.t * f.speed * 0.7) * f.amp * 0.4 : f.rest;
@@ -1520,16 +1975,19 @@ const Voxel = (() => {
     if (o.rider) {
       const R = o.rider, k = `${R.pad}|${R.helmet}|${R.shirt}|${R.saddleStyle}|${R.saddleColor}|${R.bridleStyle}|${R.bridleColor}`;
       if (e.riderKey !== k) {
-        if (e.rider) { e.rider.traverse(n => n.geometry && n.geometry.dispose()); e.group.remove(e.rider); }
+        if (e.rider) { e.rider.traverse(n => n.geometry && n.geometry.dispose()); e.content.remove(e.rider); }
         const rc = riderCells(R);
         e.rider = new T.Group();
         e.rider.add(meshOf(voxelGeometry(rc.cells, V, 3)));
         if (rc.glow.size) e.rider.add(glowMesh(voxelGeometry(rc.glow, V, 4)));
-        e.group.add(e.rider);
+        e.content.add(e.rider);
+        e.rider.traverse(n => n.layers.enable(1));
         e.riderKey = k;
       }
       e.rider.visible = true;
     } else if (e.rider) e.rider.visible = false;
+    // светящиеся узоры оставляют за лошадью сияние
+    if (ph.glow && trail) emitTrail(x, y, ph.glow, move, s, o.t);
   }
 
   let girl = null;
@@ -1548,11 +2006,13 @@ const Voxel = (() => {
     girl.legs[1].rotation.z = -sw;
   }
 
+  let lastRenderT = 0;
   function render(game) {
     if (!ready) return;
     const S = game.S, p = S.player, t = game.time();
+    const rdt = Math.min(0.1, Math.max(0, t - lastRenderT)); lastRenderT = t;
     const m = game.mounted();
-    const inCave = World.inRect(p.x, p.y, World.CAVE, 60);
+    const inCave = World.inRect(p.x, p.y, World.CAVE, 60) || !!World.inGrotto(p.x, p.y, -30);
 
     // камера следует за игроком, смотрит сверху под углом
     const narrow = innerWidth < 700;
@@ -1623,6 +2083,7 @@ const Voxel = (() => {
       P.swirl.material.color.setHSL((0.72 + Math.sin(t * 0.7) * 0.06) % 1, 0.8, 0.6);
       P.light.intensity = 1.3 + Math.sin(t * 4) * 0.4;
     }
+    if ((typeof VoxelExtra !== 'undefined')) VoxelExtra.syncHorses(game, t, close);
     for (const [id, e] of objs) if (!e.seen) { disposeObj(e); objs.delete(id); }
     syncGirl(p, t, !m);
 
@@ -1661,6 +2122,9 @@ const Voxel = (() => {
     updateExtras(game, t);
     updateBuilds(game, t);
     updatePeople(game, t);
+    updateTrail(rdt);
+    if ((typeof VoxelExtra !== 'undefined')) VoxelExtra.update(game, t, rdt, { p, cam, dark, inCave, objs });
+    if ((typeof VoxelExtra !== 'undefined') && VoxelExtra.render(game, t)) return;
     renderer.render(scene, camera);
   }
 

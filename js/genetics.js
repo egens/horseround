@@ -30,8 +30,8 @@ const Genetics = (() => {
       stats: { speed: [75, 95], jump: [45, 70], dressage: [50, 75], stamina: [75, 95] },
     },
     arab: {
-      name: 'Арабская', weight: 1.2, size: 0.92, temper: 0.7,
-      freq: { E: 0.6, A: 0.6, G: 0.45, Rn: 0.02 },
+      name: 'Арабская', weight: 1.2, size: 0.92, temper: 0.7, coats: { rainbow: 0.03 },
+      freq: { E: 0.6, A: 0.6, G: 0.45, Rn: 0.02, Cr: 0.12, LP: 0.06 },
       stats: { speed: [70, 90], jump: [40, 65], dressage: [55, 75], stamina: [85, 100] },
     },
     orlov: {
@@ -40,8 +40,8 @@ const Genetics = (() => {
       stats: { speed: [70, 92], jump: [40, 60], dressage: [45, 70], stamina: [70, 90] },
     },
     friesian: {
-      name: 'Фризская', weight: 0.8, size: 1.1, temper: 0.3, feather: true, longMane: true,
-      freq: { E: 1, A: 0 },
+      name: 'Фризская', weight: 0.8, size: 1.1, temper: 0.3, feather: true, longMane: true, marksMaresOnly: true,
+      freq: { E: 1, A: 0, G: 0.22, Cr: 0.18 },
       stats: { speed: [50, 70], jump: [40, 60], dressage: [75, 95], stamina: [60, 80] },
     },
     haflinger: {
@@ -50,8 +50,8 @@ const Genetics = (() => {
       stats: { speed: [45, 65], jump: [45, 65], dressage: [50, 70], stamina: [70, 90] },
     },
     appaloosa: {
-      name: 'Аппалуза', weight: 1, size: 0.97, temper: 0.5,
-      freq: { E: 0.6, A: 0.5, Cr: 0.05, D: 0.05, G: 0.03, LP: 0.55, Rn: 0.05 },
+      name: 'Аппалуза', weight: 1, size: 0.97, temper: 0.5, alwaysSpots: true,
+      freq: { E: 0.6, A: 0.5, Cr: 0.22, D: 0.1, G: 0.12, LP: 0.75, Rn: 0.04 },
       stats: { speed: [60, 80], jump: [50, 70], dressage: [45, 70], stamina: [70, 90] },
     },
     paint: {
@@ -78,6 +78,21 @@ const Genetics = (() => {
       name: 'Шетлендский пони', weight: 0.9, size: 0.62, temper: 0.45,
       freq: { E: 0.65, A: 0.5, Cr: 0.06, D: 0.04, G: 0.06, TO: 0.25, Rn: 0.06, Z: 0.2 },
       stats: { speed: [30, 50], jump: [40, 65], dressage: [35, 55], stamina: [60, 85] },
+    },
+    przewalski: {
+      name: 'Лошадь Пржевальского', weight: 0, home: 'steppe', hw: 1, size: 0.86, temper: 0.85, przMane: true,
+      freq: { E: 1, A: 1, D: 1, F: 1 },
+      stats: { speed: [60, 82], jump: [40, 62], dressage: [30, 50], stamina: [85, 100] },
+    },
+    fedorov: {
+      name: 'Федоровская', weight: 0.9, size: 1.0, temper: 0.4,
+      freq: { E: 0.15, A: 0.5, Cr: 0.35, G: 0.3, F: 0.5 },
+      stats: { speed: [60, 82], jump: [55, 80], dressage: [60, 85], stamina: [65, 88] },
+    },
+    andalusian: {
+      name: 'Андалузская', weight: 1, size: 1.02, temper: 0.45, longMane: true, coats: { pearl: 0.1 },
+      freq: { E: 0.65, A: 0.3, G: 0.5, Cr: 0.12, LP: 0.08 },
+      stats: { speed: [58, 80], jump: [55, 80], dressage: [78, 98], stamina: [65, 88] },
     },
     // волшебные породы живут только в Грибном королевстве, скелеты — в пещере
     pegasus: {
@@ -182,6 +197,47 @@ const Genetics = (() => {
       name: 'Лошадь-пчёлка', weight: 0, home: 'island', hw: 1, size: 0.75, temper: 0.4, magic: { wings: 'bee' },
       freq: { E: 0.25, A: 0.6, Cr: 0.45, F: 0.5 },
       stats: { speed: [55, 78], jump: [55, 80], dressage: [60, 85], stamina: [70, 92] },
+    },
+    // лошадь с черепом на голове и рёбрами на теле — с Костяного острова
+    bonehorse: {
+      name: 'Костяная лошадь', weight: 0, home: 'island', hw: 1, size: 1.02, temper: 0.6, magic: { bones: true },
+      freq: { E: 0.7, A: 0.25, G: 0.1 },
+      stats: { speed: [70, 92], jump: [65, 88], dressage: [50, 75], stamina: [85, 100] },
+    },
+    // чешуйчатая лошадь с драконьими крыльями того же цвета и серыми драконьими рогами
+    scalehorse: {
+      name: 'Чешуйчатая драконья лошадь', weight: 0, home: 'dragonrock', hw: 1, size: 1.08, temper: 0.8, magic: { wings: 'dragon', scales: 'random', dhorns: true },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [80, 99], jump: [70, 95], dressage: [50, 78], stamina: [85, 100] },
+    },
+    // розовый дракон — живёт только в волшебном биоме, очень редкий
+    pinkdragon: {
+      name: 'Розовый дракон', weight: 0, home: 'magic', hw: 0, size: 1.1, temper: 0.75, magic: { wings: 'dragon', scales: '#ff8cc6', dhorns: true, dragonEyes: '#ff4fa3' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [88, 99], jump: [85, 99], dressage: [75, 95], stamina: [88, 100] },
+    },
+    zebra: {
+      name: 'Зебра', weight: 0, home: 'desert', hw: 1, size: 0.92, temper: 0.8, przMane: true, magic: { zebra: 'random' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [75, 95], jump: [55, 78], dressage: [35, 60], stamina: [80, 98] },
+    },
+    // чёрные лошади со светящимися узорами — в маленьких пещерках
+    glowhorse: {
+      name: 'Светящаяся лошадь', weight: 0, home: 'grotto', hw: 1, size: 0.98, temper: 0.6, magic: { glow: 'random' },
+      freq: { E: 1, A: 0 },
+      stats: { speed: [70, 92], jump: [65, 90], dressage: [65, 90], stamina: [70, 92] },
+    },
+    // меховая лошадь-лиса: лисий хвост, лисий мех, лошадиная голова
+    foxhorse: {
+      name: 'Лисья лошадь', weight: 0, home: 'foxwood', hw: 1, size: 0.9, temper: 0.65, magic: { fox: 'random' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [72, 94], jump: [70, 92], dressage: [55, 80], stamina: [65, 88] },
+    },
+    // праздничные лошади (появляются на Хэллоуин, Новый год и Пасху)
+    holidayhorse: {
+      name: 'Праздничная лошадь', weight: 0, home: 'holiday', hw: 0, size: 0.98, temper: 0.4, magic: { holiday: 'random' },
+      freq: { E: 0.5, A: 0.5 },
+      stats: { speed: [65, 88], jump: [65, 88], dressage: [65, 88], stamina: [65, 88] },
     },
     // настоящая северная порода: мохнатая, выносливая, часто саврасая и серая
     yakut: {

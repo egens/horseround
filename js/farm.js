@@ -211,7 +211,7 @@ const Farm = (() => {
       if (World.blocked(x, y, 20)) continue;
       return { x, y, cave: area === World.CAVE };
     }
-    return { x: 2500, y: 1200 };
+    return { x: World.FIELD.x + 700, y: World.FIELD.y + 1100 };
   }
 
   function updateDetector(dt) {

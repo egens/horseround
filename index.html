@@ -15,10 +15,12 @@
       <span id="hud-count" class="pill"></span>
       <span id="hud-clock" class="pill"></span>
       <span id="hud-medals" class="pill hidden"></span>
+      <span id="hud-event" class="pill hidden"></span>
     </div>
     <div class="hud-right">
       <button id="btn-horses" class="pill btn-hud" title="Мои лошади">🐴 Лошади</button>
       <button id="btn-quests" class="pill btn-hud" title="Задания (J)">📜</button>
+      <button id="btn-players" class="pill btn-hud" title="Игроки">👥</button>
       <button id="btn-build" class="pill btn-hud" title="Стройка (B)">🔨</button>
       <button id="btn-detector" class="pill btn-hud hidden" title="Металлоискатель (M)">📡</button>
       <button id="btn-inv" class="pill btn-hud" title="Рюкзак">🎒</button>
@@ -38,6 +40,7 @@
 
   <div id="bottom">
     <div id="lead" class="panel hidden"><span id="lead-name"></span><button id="btn-release" class="btn small">Отпустить</button></div>
+    <div id="walk" class="panel hidden"><span id="walk-name"></span><button id="btn-walk-pet" class="btn small">💕 Погладить</button><button id="btn-walk-play" class="btn small">🎾 Играть</button><button id="btn-walk-home" class="btn small">🏠 В денник</button></div>
     <div id="ride" class="panel hidden">
       <div class="ride-top"><span id="ride-name"></span><div class="energy"><div id="ride-energy"></div></div></div>
       <div class="gaits">
@@ -45,10 +48,12 @@
         <button data-gait="1" class="btn">2 Рысь</button>
         <button data-gait="2" class="btn">3 Галоп</button>
         <button id="btn-fly" class="btn hidden">🪽 Взлететь</button>
+        <button id="btn-tricks" class="btn" title="Трюки (T)">🎭 Трюки</button>
         <button id="btn-dismount" class="btn ghost">Слезть</button>
       </div>
     </div>
     <div class="actions">
+      <button id="btn-birth" class="btn big pink hidden">🍼 Родить жеребёнка</button>
       <button id="btn-lift" class="btn big orange hidden">⤴ Ноги выше!</button>
       <button id="btn-lasso" class="btn big orange hidden">🤠 Бросить лассо</button>
       <button id="prompt" class="btn big green hidden"></button>
@@ -63,6 +68,15 @@
       <div class="lasso-bar"><div id="lasso-zone"></div><div id="lasso-needle"></div></div>
       <p class="small">Останови стрелку в зелёной зоне</p>
       <button id="lasso-throw" class="btn big orange">Бросить! (Пробел)</button>
+    </div>
+  </div>
+
+  <div id="birth" class="hidden">
+    <div class="birth-box">
+      <h2>🍼 Рождается жеребёнок!</h2>
+      <canvas id="birth-canvas"></canvas>
+      <p id="birth-text"></p>
+      <button id="birth-ok" class="btn big green hidden">Ура! 💕</button>
     </div>
   </div>
 
@@ -83,9 +97,14 @@
   <script src="js/farm.js"></script>
   <script src="js/quests.js"></script>
   <script src="js/creatures.js"></script>
+  <script src="js/care.js"></script>
+  <script src="js/train.js"></script>
+  <script src="js/holidays.js"></script>
+  <script src="js/ai.js"></script>
   <script src="js/market.js"></script>
   <script src="js/three-loader.js"></script>
   <script src="js/voxel.js"></script>
+  <script src="js/voxel-extra.js"></script>
   <script src="js/game.js"></script>
   <script>Game.start();</script>
 </body>
