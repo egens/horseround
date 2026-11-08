@@ -9,6 +9,14 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Items = require(Shared.Items)
 local Horses = require(Shared.Horses)
 local Util = require(Shared.Util)
+local World = require(Shared.World)
+
+-- цены построек и семян из старых сохранений: стройку и огород убрали, их стоимость возвращаем монетами
+local OLD_BUILD_PRICE = {
+	bed = 20, fence = 8, lamp = 35, flowerbed = 15, bench = 25, trough = 35, haystack = 20, tree = 30,
+	bunnyhouse = 60, well = 80, windmill = 250, stable5 = 400,
+}
+local OLD_SEED_PRICE = { seed_carrot = 4, seed_oats = 5, seed_hay = 3, seed_pumpkin = 10, seed_sunflower = 7 }
 
 local Profiles = {}
 local STORE_NAME = "HorseFarm_v1"
@@ -21,7 +29,7 @@ end
 function Profiles.new()
 	local inv = {}
 	for k in pairs(Items.ITEMS) do inv[k] = 0 end
-	inv.hay, inv.carrot, inv.apple, inv.seed_carrot = 6, 3, 2, 2
+	inv.hay, inv.carrot, inv.apple = 6, 3, 2
 	return {
 		money = 300,
 		inv = inv,
@@ -36,7 +44,7 @@ function Profiles.new()
 		stats = { caught = 0, foals = 0, sold = 0, gold = 0, silver = 0, bronze = 0, bunnies = 0, races = 0, wins = 0 },
 		nextId = 1,
 		seenHelp = false,
-		builds = {}, flags = {}, quests = {}, board = false, buildId = 0, bigTreasure = false,
+		flags = {}, quests = {}, board = false, bigTreasure = false,
 		market = false, version = 1,
 	}
 end
@@ -51,7 +59,6 @@ local function normalize(data)
 	s.tack.saddleStyles = Util.assign({ classic = true }, s.tack.saddleStyles)
 	s.tack.bridleStyles = Util.assign({ classic = true }, s.tack.bridleStyles)
 	s.stats = Util.assign(Profiles.new().stats, data.stats)
-	s.builds = data.builds or {}
 	s.flags = data.flags or {}
 	s.quests = data.quests or {}
 	local maxId = s.nextId or 1
@@ -65,7 +72,51 @@ local function normalize(data)
 		for _, h in ipairs(s.market.stock) do maxId = math.max(maxId, (h.id or 0) + 1) end
 	end
 	s.nextId = maxId
+	Profiles.migrateBuilds(s, data)
 	return s
+end
+
+-- старое сохранение со стройкой и огородом: вернуть монеты, переселить лошадей из маленьких конюшен
+function Profiles.migrateBuilds(s, data)
+	local refund = 0
+	if type(data.builds) == "table" then
+		for _, b in ipairs(data.builds) do refund += OLD_BUILD_PRICE[b.type] or 0 end
+	end
+	for k, price in pairs(OLD_SEED_PRICE) do
+		refund += (tonumber(data.inv and data.inv[k]) or 0) * price
+	end
+	-- волшебные семечки — в волшебную пыльцу (её раньше давал волшебный цветок)
+	local magic = tonumber(data.inv and data.inv.seed_magic) or 0
+	if magic > 0 then s.inv.pollen = (s.inv.pollen or 0) + magic end
+	-- семян больше нет
+	for k in pairs(s.inv) do
+		if string.sub(k, 1, 5) == "seed_" then s.inv[k] = nil end
+	end
+	s.builds, s.buildId = nil, nil
+	-- лошади из маленьких конюшен (денники 20–999) — в свободные денники главной конюшни или на острова
+	local used = {}
+	for _, h in ipairs(s.horses) do used[h.stall] = true end
+	local free = {}
+	for i = 0, 19 do
+		if not used[i] then table.insert(free, i) end
+	end
+	for k = 0, #World.ISLANDS - 1 do
+		for i = 0, 4 do
+			local st = 1000 + k * 5 + i
+			if not used[st] then table.insert(free, st) end
+		end
+	end
+	local moved = 0
+	for _, h in ipairs(s.horses) do
+		if type(h.stall) == "number" and h.stall >= 20 and h.stall < 1000 and #free > 0 then
+			h.stall = table.remove(free, 1)
+			moved += 1
+		end
+	end
+	if refund > 0 or moved > 0 or magic > 0 then
+		s.money += refund
+		s._migrated = { refund = refund, moved = moved }
+	end
 end
 
 function Profiles.load(player)

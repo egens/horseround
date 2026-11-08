@@ -1,10 +1,11 @@
 --[[
 	Окна (перенос модального окна из js/ui.js): конюшня, лошадь, скрещивание, трюки, игроки,
 	повозки, лодка, рынок, рюкзак, тренировка, конкур, результаты, жители и задания,
-	стройка, грядка, грива, скачки, справка.
+	грива, скачки, справка.
 ]]
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Util = require(Shared.Util)
@@ -14,6 +15,7 @@ local Horses = require(Shared.Horses)
 local Genetics = require(Shared.Genetics)
 local Stalls = require(Shared.Stalls)
 local Q = require(Shared.QuestData)
+local BuildInfo = require(Shared.BuildInfo)
 
 local Client = script.Parent.Parent
 local State = require(Client.State)
@@ -27,7 +29,6 @@ local gui, modal, titleL, body
 local current = nil
 local views = {}
 local lastRender = 0
-Win.controls = nil -- задаёт Main (стройка)
 
 local function act(...) State.act(...) end
 local function open(name, data) Win.open(name, data) end
@@ -71,8 +72,7 @@ end
 --[[ ================= конюшня ================= ]]
 views.stable = function(B, d)
 	local P = State.P
-	local can = d.can
-	if not can then Kit.note(B, "Ты далеко от конюшни — можно только посмотреть. Подойди ближе, чтобы ухаживать за лошадьми.") end
+	local can = true -- денник доступен откуда угодно
 	local total = 0
 	for _, grp in ipairs(Stalls.groups(P)) do
 		total += #grp.list
@@ -86,7 +86,7 @@ views.stable = function(B, d)
 				local num = grp.title == "Ферма" and i + 1 or (i - 1000) % 5 + 1
 				local h = Stalls.horseIn(P, i)
 				if not h then
-					Kit.card(grid, nil, { "№" .. num, "свободный денник" }, nil, { width = 150 })
+					Kit.card(grid, nil, { "№" .. num, "свободный денник" }, nil, { width = 176 })
 				else
 					local ph = Horses.pheno(h)
 					Kit.card(grid, Horses.look(h), { "№" .. num .. "  " .. Kit.sexIcon(h) .. " " .. esc(h.name), esc(ph.name), esc(Genetics.BREEDS[h.breed].name) .. ", " .. Horses.ageText(h), statusBadges(h) },
@@ -103,8 +103,7 @@ end
 views.horse = function(B, d)
 	local P = State.P
 	local h = State.byId(d.id)
-	local can = d.can
-	if can == nil then can = State.hud and State.hud.atFarm end
+	local can = true -- денник доступен откуда угодно
 	Kit.button(Kit.row(B), "← Все лошади", function() open("stable", { can = can }) end, { color = "ghost" })
 	if not h then
 		Kit.text(B, "Этой лошади больше нет на ферме.")
@@ -233,9 +232,9 @@ views.players = function(B, d)
 		end)
 		return "👥 Игроки"
 	end
-	Kit.text(B, "Кто поймает больше лошадей? Здесь все игроки на сервере и три ИИ-игрока: они ездят по дорогам мира, ловят диких лошадей и тоже спешат к поезду.")
+	Kit.text(B, "Кто поймает больше лошадей? Здесь все игроки на сервере.")
 	for i, r in ipairs(res.rows or {}) do
-		Kit.text(B, i .. ". " .. (r.me and "⭐ " or r.human and "🧑 " or "🤖 ") .. "<b>" .. esc(r.name) .. "</b> — поймано: " .. r.caught .. " · " .. r.money .. " 💰 · " .. esc(r.where or ""),
+		Kit.text(B, i .. ". " .. (r.me and "⭐ " or "🧑 ") .. "<b>" .. esc(r.name) .. "</b> — поймано: " .. r.caught .. " · " .. r.money .. " 💰 · " .. esc(r.where or ""),
 			{ bg = r.me and color("#fff3bf") or C.panel2, size = 15 })
 	end
 	local tr, hd = res.train or {}, res.holiday or {}
@@ -294,16 +293,6 @@ views.shop = function(B)
 	Kit.item(B, "🔧", "Новые подковы (4 шт.)", "25 💰 · есть " .. (P.inv.horseshoes or 0) .. " · подковать — мини-игра у лошади", function(f)
 		Kit.button(f, "+1", function() act("buyItem", "horseshoes", 1) end, { small = true })
 	end)
-	Kit.h(B, "Семена для грядок")
-	for _, k in ipairs(Items.CROP_ORDER) do
-		local c = Items.CROPS[k]
-		if c.seedPrice > 0 then
-			Kit.item(B, "🌱", c.name, c.seedPrice .. " 💰 · есть " .. (P.inv[c.seed] or 0) .. " · растёт ~" .. math.floor(c.time / 60 + 0.5) .. " мин", function(f)
-				Kit.button(f, "+1", function() act("buyItem", c.seed, 1) end, { small = true })
-				Kit.button(f, "+5", function() act("buyItem", c.seed, 5) end, { small = true })
-			end)
-		end
-	end
 	Kit.h(B, "Краски для гривы")
 	dyeShop(B, 1.2)
 	tackStyles(B)
@@ -507,7 +496,7 @@ views.market = function(B, d)
 		end
 		Kit.h(B, "🔁 Вещи на вещи")
 		local SWAPS = {
-			{ id = "s1", give = { mushroom = 5 }, get = { seed_magic = 1 } }, { id = "s2", give = { glowshroom = 3 }, get = { dye_rainbow = 1 } },
+			{ id = "s1", give = { mushroom = 5 }, get = { pollen = 1 } }, { id = "s2", give = { glowshroom = 3 }, get = { dye_rainbow = 1 } },
 			{ id = "s3", give = { pumpkin = 2 }, get = { oats = 10 } }, { id = "s4", give = { carrot = 10 }, get = { dye_pink = 1 } },
 			{ id = "s5", give = { oldCoin = 1, spoon = 1 }, get = { dye_gold = 1 } }, { id = "s6", give = { sunflower = 3 }, get = { apple = 10 } },
 			{ id = "s7", give = { pollen = 2 }, get = { dye_purple = 1, dye_mint = 1 } }, { id = "s8", give = { oldShoe = 3 }, get = { sugar = 15 } },
@@ -653,8 +642,8 @@ views.inventory = function(B)
 	local ach = {
 		"🤠 Поймано: " .. (st.caught or 0), "🐰 Зайчиков: " .. (st.bunnies or 0), "🏁 Скачек: " .. (st.races or 0) .. ", побед: " .. (st.wins or 0),
 		"🍼 Жеребят: " .. (st.foals or 0), "💰 Продано: " .. (st.sold or 0), "🥇 " .. (st.gold or 0), "🥈 " .. (st.silver or 0), "🥉 " .. (st.bronze or 0),
-		"⛏️ Кладов: " .. (st.treasures or 0), "🍄 Грибов: " .. (st.mushrooms or 0), "🧺 Урожаев: " .. (st.harvest_total or 0),
-		"🔨 Построек: " .. #P.builds, "📜 Заданий: " .. (st.questsDone or 0), "👻 Привидений: " .. (st.ghosts or 0),
+		"⛏️ Кладов: " .. (st.treasures or 0), "🍄 Грибов: " .. (st.mushrooms or 0),
+		"📜 Заданий: " .. (st.questsDone or 0), "👻 Привидений: " .. (st.ghosts or 0),
 	}
 	local ar = Kit.row(B)
 	for _, a in ipairs(ach) do Kit.text(ar, a, { width = 0, widthOffset = 190, bg = C.panel2, size = 14 }) end
@@ -821,51 +810,6 @@ views.quests = function(B)
 	return "📜 Задания"
 end
 
---[[ ================= стройка и огород ================= ]]
-views.build = function(B)
-	local P = State.P
-	Kit.text(B, "У тебя: <b>" .. P.money .. " 💰</b>. Выбери постройку, потом нажми на землю, куда её поставить. R — повернуть, Esc — отмена.")
-	for _, k in ipairs(Items.BUILD_ORDER) do
-		local dd = Items.BUILDS[k]
-		Kit.item(B, dd.icon, dd.name, dd.desc, function(f)
-			Kit.button(f, dd.price .. " 💰", function()
-				Win.close()
-				if Win.controls then Win.controls.startBuild(k) end
-			end, { small = true, color = "green", disabled = P.money < dd.price })
-		end)
-	end
-	Kit.button(Kit.row(B), "🧹 Убрать постройку", function()
-		Win.close()
-		if Win.controls then Win.controls.startRemove() end
-	end)
-	return "🔨 Стройка"
-end
-views.bed = function(B, d)
-	local P = State.P
-	local b = Util.find(P.builds, function(x) return x.id == d.id end)
-	if not b then return "Грядка" end
-	if not b.crop then
-		Kit.text(B, "Грядка пустая. Что посадим?")
-		for _, k in ipairs(Items.CROP_ORDER) do
-			local c = Items.CROPS[k]
-			local n = P.inv[c.seed] or 0
-			Kit.item(B, "🌱", c.name, "семян: " .. n .. " · урожай: " .. Items.icon(c.yield[1]) .. " ×" .. c.yield[2], function(f)
-				Kit.button(f, "Посадить", function() act("plant", b.id, k) end, { small = true, color = "green", disabled = n == 0 })
-			end)
-		end
-		Kit.small(B, "Семена продаются в повозке «Корм и амуниция».")
-	else
-		local c = Items.CROPS[b.crop]
-		Kit.text(B, "Растёт: <b>" .. c.name .. "</b>")
-		Kit.bar(B, "Подросло", (b.grow or 0) * 100, "#69db7c")
-		Kit.bar(B, "Влажность", math.min(100, (b.wet or 0) / 0.9), "#4dabf7")
-		if (b.wet or 0) > 0 then Kit.small(B, "Земля влажная — растёт.") else Kit.note(B, "Земля сухая — полей, иначе не растёт!") end
-		local r = Kit.row(B)
-		Kit.button(r, "💧 Полить", function() act("water", b.id) end)
-		Kit.button(r, "🧺 Собрать", function() act("harvest", b.id) end, { color = "green", disabled = (b.grow or 0) < 1 })
-	end
-	return "🌱 Грядка"
-end
 views.mane = function(B, d)
 	local P = State.P
 	local h = State.byId(d.id)
@@ -927,12 +871,12 @@ views.help = function(B)
 	Kit.text(B, "Ты — хозяйка лошадиной фермы! В большом поле к востоку от фермы бегает табун диких лошадей. Лови их, ухаживай, тренируй и разводи жеребят настоящих окрасов. Вместе с тобой на сервере играют другие игроки — можно скакать наперегонки и продавать друг другу лошадей.")
 	Kit.h(B, "Управление")
 	for _, s in ipairs({
-		"<b>WASD / стрелки</b> или джойстик — идти, мышь — поворот камеры, колесо — приблизить",
+		"<b>WASD / стрелки</b> или джойстик — идти, <b>Shift</b> — бежать, <b>Пробел</b> — прыгнуть; мышь — поворот камеры, колесо — приблизить",
 		"<b>E</b> — открыть то, рядом с чем стоишь (конюшня, повозки, тренировка) — или большая зелёная кнопка",
-		"<b>Пробел</b> или <b>клик по лошади</b> — бросить лассо; на кавалетти — «ноги выше!», в конкуре — прыжок",
+		"<b>F</b> или <b>клик по лошади</b> — бросить лассо; верхом <b>Пробел</b>: на кавалетти — «ноги выше!», в конкуре — прыжок",
 		"<b>1 / 2 / 3</b> — шаг / рысь / галоп, <b>Q / R</b> — медленнее / быстрее, <b>X</b> — слезть, <b>V</b> — взлететь на крылатой лошади",
 		"В полёте: <b>Пробел</b> — выше, <b>Ctrl</b> или <b>C</b> — ниже",
-		"<b>B</b> — стройка, <b>J</b> — задания, <b>M</b> — металлоискатель, <b>T</b> — трюки верхом, <b>N</b> — заржать",
+		"<b>M</b> — большая карта, <b>J</b> — задания, <b>G</b> — металлоискатель, <b>T</b> — трюки верхом, <b>N</b> — заржать",
 	}) do Kit.text(B, "• " .. s, { size = 15 }) end
 	Kit.h(B, "Что можно делать")
 	for _, s in ipairs({
@@ -945,11 +889,17 @@ views.help = function(B)
 		"🎲 <b>Случайные события</b>: дождь и радуга, зайчики с подарками, подкова на счастье, ярмарка, потерявшаяся лошадь, приглашения на скачки.",
 		"🦄 <b>Волшебные лошадки</b> в Грибном королевстве, скелеты в пещере, крылатые — на островах в море, облачные — на небесных островах (портал в глубине пещеры).",
 		"💬 <b>Жители</b> дают задания: ❗ — новое задание, ❓ — можно сдать.",
-		"🔨 <b>Стройка и огород</b>, 📡 <b>металлоискатель и клады</b>, 🎪 <b>рынок</b> с торгом, тренером, обменом и своей стойкой.",
-		"🚂 <b>Поезд</b> раз в 30 минут, 🎃🎄🥚 <b>праздники</b> раз в час, 🤖 <b>ИИ-игроки</b> тоже ловят лошадей.",
+		"🗺️ <b>Большая карта</b> (M), 📡 <b>металлоискатель и клады</b>, 🎪 <b>рынок</b> с торгом, тренером, обменом и своей стойкой.",
+		"🚂 <b>Поезд</b> раз в 30 минут, 🎃🎄🥚 <b>праздники</b> раз в час — успей вместе с другими игроками.",
 		"🌙 <b>День и ночь</b>: сутки — 8 минут. Ночью табун спит, и подкрасться к лошадям легче.",
 	}) do Kit.text(B, s, { size = 15 }) end
 	Kit.text(B, "Игра сохраняется сама.")
+	-- когда обновлялся сервер: время сборки из CI, иначе — время запуска сервера (по Москве, UTC+3)
+	local t, what = BuildInfo.builtAt, "Сервер обновлён"
+	if type(t) ~= "number" then t, what = workspace:GetAttribute("ServerStartedAt"), "Сервер запущен" end
+	if type(t) == "number" then
+		Kit.small(B, "🕒 " .. what .. ": " .. os.date("!%d.%m.%Y %H:%M", t + 3 * 3600) .. " (МСК)")
+	end
 	local r = Kit.row(B, { center = true })
 	Kit.button(r, "Играть!", function()
 		act("seenHelp")
@@ -959,7 +909,7 @@ views.help = function(B)
 	return "🐴 Лошадиная ферма — как играть"
 end
 views.confirmReset = function(B)
-	Kit.text(B, "Точно начать заново? Все лошади, деньги и постройки пропадут.")
+	Kit.text(B, "Точно начать заново? Все лошади, деньги и вещи пропадут.")
 	local r = Kit.row(B)
 	Kit.button(r, "Да, начать заново", function() act("reset") end, { color = "pink" })
 	Kit.button(r, "Нет", function() open("help", {}) end, { color = "ghost" })
@@ -972,6 +922,7 @@ local function clearBody()
 		if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
 	end
 end
+local renderToken
 function Win.render()
 	if not current or not State.P then return end
 	local v = views[current.name]
@@ -986,6 +937,13 @@ function Win.render()
 	titleL.Text = title or ""
 	body.CanvasPosition = scroll
 	lastRender = os.clock()
+	-- высоты рядов пересчитываются на следующем кадре — тогда и вернуть прокрутку, иначе окно прыгает наверх
+	local token = {}
+	renderToken = token
+	task.spawn(function()
+		RunService.RenderStepped:Wait()
+		if renderToken == token then body.CanvasPosition = scroll end
+	end)
 end
 function Win.open(name, data)
 	if name == "close" then return Win.close() end
@@ -1025,7 +983,8 @@ function Win.build(parentGui)
 		if not current then return end
 		if UserInputService:GetFocusedTextBox() then return end
 		local recentAction = os.clock() - State.actT < 2.5
-		if recentAction or os.clock() - lastRender > 3 then Win.render() end
+		-- без действий — не чаще раза в 10 секунд, чтобы карточки с портретами не мигали
+		if recentAction or os.clock() - lastRender > 10 then Win.render() end
 	end)
 end
 

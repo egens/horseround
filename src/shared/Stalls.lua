@@ -1,37 +1,14 @@
 --[[
-	Денники и постройки — общие для сервера и клиента.
-	Денники: 0–19 — главная конюшня, 20+ — маленькие конюшни игрока, 1000+ — конюшни на островах (по 5).
+	Денники — общие для сервера и клиента.
+	Денники: 0–19 — главная конюшня, 1000+ — конюшни на островах (по 5).
 ]]
 local World = require(script.Parent.World)
-local Items = require(script.Parent.Items)
 
 local Stalls = {}
 Stalls.ISLAND_STALL = 1000
 
-function Stalls.dims(btype, rot)
-	local d = Items.BUILDS[btype]
-	if rot == 1 then return d.h, d.w end
-	return d.w, d.h
-end
-function Stalls.rectOf(b)
-	local w, h = Stalls.dims(b.type, b.rot)
-	return { x = b.x - w / 2, y = b.y - h / 2, w = w, h = h }
-end
--- стены маленькой конюшни: сзади и по бокам, спереди открыто
-function Stalls.stableWalls(b)
-	local r, t = Stalls.rectOf(b), 10
-	return { { x = r.x, y = r.y, w = r.w, h = t }, { x = r.x, y = r.y, w = t, h = r.h }, { x = r.x + r.w - t, y = r.y, w = t, h = r.h } }
-end
-
-function Stalls.stables5(P)
-	local list = {}
-	for _, b in ipairs(P.builds) do
-		if b.type == "stable5" then table.insert(list, b) end
-	end
-	table.sort(list, function(a, b) return a.id < b.id end)
-	return list
-end
-function Stalls.maxStalls(P) return 20 + #Stalls.stables5(P) * 5 end
+-- маленьких конюшен игроков больше нет (стройку убрали) — только главная и островные
+function Stalls.maxStalls(P) return 20 end
 function Stalls.totalStalls(P) return Stalls.maxStalls(P) + #World.ISLANDS * 5 end
 
 function Stalls.islandOfStall(i)
@@ -43,13 +20,6 @@ function Stalls.label(i)
 	if I then return I.name .. ", денник №" .. ((i - Stalls.ISLAND_STALL) % 5 + 1) end
 	return "№" .. (i + 1)
 end
-function Stalls.extraSpot(P, i)
-	local st = Stalls.stables5(P)[math.floor((i - 20) / 5) + 1]
-	if not st then return nil end
-	local r, k = Stalls.rectOf(st), (i - 20) % 5
-	if st.rot == 1 then return { x = r.x + 75, y = r.y + 34 + k * 68, angle = 0 } end
-	return { x = r.x + 34 + k * 68, y = r.y + 72, angle = math.pi / 2 }
-end
 function Stalls.spot(P, i)
 	local I = Stalls.islandOfStall(i)
 	if I then
@@ -57,7 +27,7 @@ function Stalls.spot(P, i)
 		return { x = I.stable.x + 34 + k * 68, y = I.stable.y + 72, angle = math.pi / 2 }
 	end
 	if i < 20 then return World.stallSpot(i) end
-	return Stalls.extraSpot(P, i) or World.stallSpot(0)
+	return World.stallSpot(0)
 end
 function Stalls.horseIn(P, i)
 	for _, h in ipairs(P.horses) do
@@ -107,14 +77,8 @@ function Stalls.paddockFor(h)
 	local I = Stalls.islandOfStall(h.stall)
 	return I and I.pasture or World.PADDOCK
 end
-function Stalls.nearSmallStable(P, x, y)
-	for _, b in ipairs(Stalls.stables5(P)) do
-		if World.inRect(x, y, Stalls.rectOf(b), 60) then return true end
-	end
-	return false
-end
 function Stalls.atFarm(P, x, y)
-	return World.inRect(x, y, World.STABLE, 40) or World.inRect(x, y, World.PADDOCK, 50) or Stalls.nearSmallStable(P, x, y) or Stalls.islandStableHere(x, y) ~= nil
+	return World.inRect(x, y, World.STABLE, 40) or World.inRect(x, y, World.PADDOCK, 50) or Stalls.islandStableHere(x, y) ~= nil
 end
 
 -- место выставленной на рынке лошади игрока

@@ -276,7 +276,7 @@ function HB.pose(e, o)
 	end
 end
 
---[[ всадник-бот (ИИ-игроки и соперники на скачках): стандартный человечек Roblox в седле.
+--[[ всадник-бот (соперник на скачках): стандартный человечек Roblox в седле.
 	Шаблон RiderTemplate создаёт сервер (People.lua), здесь его клонируем, красим и сажаем. ]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local function setLimbColor(rig, names, c)

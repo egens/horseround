@@ -23,7 +23,8 @@ function Actions.sellPrice(h, wildOne)
 	if wildOne then p *= 0.85 end
 	return math.floor(p / 5 + 0.5) * 5
 end
-local function atFarm(sess) return Stalls.atFarm(sess.P, sess.p.x, sess.p.y) end
+-- денник доступен откуда угодно: кормить, чистить, выпускать в леваду, скрещивать и т. д. можно из любого места
+local function atFarm(sess) return true end
 local function nearSell(sess)
 	return hypot(sess.p.x - (World.SELL.x + World.SELL.w / 2), sess.p.y - (World.SELL.y + World.SELL.h / 2)) < 170
 end
@@ -280,9 +281,6 @@ end
 -- цены на вещи в повозке (сервер не верит цене от клиента)
 local function shopPrice(sess, key)
 	if key == "horseshoes" then return 25 end
-	for _, c in pairs(Items.CROPS) do
-		if c.seed == key and c.seedPrice > 0 then return c.seedPrice end
-	end
 	for _, d in pairs(Items.DYES) do
 		if d.item == key then
 			if nearLola(sess) then return d.price end
@@ -406,7 +404,6 @@ function A.reset(sess)
 	sess.P = Profiles.new()
 	sess.P.seenHelp = seen
 	G.modules.Market.reset(sess)
-	G.modules.Farm.syncSolids()
 	G.R.Open:FireClient(sess.player, "close")
 	G.toast(sess, "Новая игра! Поймай свою первую лошадь в поле →")
 end
@@ -521,16 +518,6 @@ function Actions.handle(sess, name, a, b, c)
 		A.setManeStyle(sess, horseArg(sess, a), b)
 	elseif name == "maneDye" then
 		A.dyeMane(sess, horseArg(sess, a), b)
-	elseif name == "build" then
-		M.Farm.build(sess, a, b and b.x, b and b.y, b and b.rot)
-	elseif name == "unbuild" then
-		M.Farm.remove(sess, tonumber(a) or 0, tonumber(b) or 0)
-	elseif name == "plant" then
-		M.Farm.plant(sess, tonumber(a), b)
-	elseif name == "water" then
-		M.Farm.water(sess, tonumber(a))
-	elseif name == "harvest" then
-		M.Farm.harvest(sess, tonumber(a))
 	elseif name == "qAccept" then
 		M.Quests.accept(sess, a)
 	elseif name == "qTurnIn" then

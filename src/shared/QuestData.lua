@@ -9,10 +9,10 @@ local Q = {}
 local OX, OY = World.OX, World.OY
 
 Q.NPCS = {
-	{ id = "galya", name = "Бабушка Галя", x = OX + 1520, y = OY + 2740, role = "огородница",
+	{ id = "galya", name = "Бабушка Галя", x = OX + 1520, y = OY + 2740, role = "любит лошадей",
 		look = { shirt = "#c2255c", pants = "#5c3d2e", hair = "#d0d0d0", hat = "scarf", hatColor = "#f08c00" },
-		hello = { "Здравствуй, внученька! Огород — это радость.", "Морковка для лошадки — лучшее угощение!", "Дождик польёт грядки сам, а в сухую погоду поливай." },
-		tips = { "Построй грядку через кнопку 🔨, купи семена в повозке и посади их.", "Колодец рядом с грядками поливает их сам." } },
+		hello = { "Здравствуй, внученька! Лошадки — это радость.", "Морковка для лошадки — лучшее угощение!", "Чистая лошадка — весёлая лошадка." },
+		tips = { "Щётку и подковы продают в повозке «Корм и амуниция».", "Тыквы иногда находят в земле с металлоискателем." } },
 	{ id = "misha", name = "Тренер Дядя Миша", x = OX + 1000, y = OY + 330, role = "тренер",
 		look = { shirt = "#1c7ed6", pants = "#e9e0cc", hair = "#5a3d2b", hat = "cap", hatColor = "#212529", beard = true },
 		hello = { "Пятки вниз, спина прямая!", "Хорошая всадница сначала заботится о лошади.", "Тренируйся каждый день — и будет результат." },
@@ -63,10 +63,10 @@ Q.QUESTS = {
 	{ id = "m4", npc = "misha", title = "Чистый конкур", text = "Пройди маршрут конкура 80 см или выше без штрафных очков.", goal = { stat = "jump80", n = 1 }, reward = { money = 100 } },
 	{ id = "m5", npc = "misha", title = "Чемпионка", text = "Выиграй скачки.", goal = { stat = "wins", n = 1 }, reward = { money = 150, dye_gold = 1 } },
 
-	{ id = "g1", npc = "galya", title = "Первая грядка", text = "Построй грядку (кнопка 🔨 «Стройка»).", goal = { stat = "built_bed", n = 1 }, reward = { money = 20, seed_carrot = 4 } },
-	{ id = "g2", npc = "galya", title = "Морковный урожай", text = "Посади морковь и собери урожай два раза.", goal = { stat = "harvest_carrot", n = 2 }, reward = { money = 50, seed_pumpkin = 2 } },
-	{ id = "g3", npc = "galya", title = "Большой огород", text = "Построй ещё три грядки.", goal = { stat = "built_bed", n = 3 }, reward = { money = 60, seed_sunflower = 3 } },
-	{ id = "g4", npc = "galya", title = "Тыква к празднику", text = "Вырасти и собери тыкву.", goal = { stat = "harvest_pumpkin", n = 1 }, reward = { money = 80, seed_magic = 1 } },
+	{ id = "g1", npc = "galya", title = "Чистая лошадка", text = "Почисти лошадь щёткой.", goal = { stat = "brushed", n = 1 }, reward = { money = 30, carrot = 5 } },
+	{ id = "g2", npc = "galya", title = "Банный день", text = "Помой лошадь.", goal = { stat = "washed", n = 1 }, reward = { money = 50, apple = 5 } },
+	{ id = "g3", npc = "galya", title = "Новые подковки", text = "Подкуй лошадь.", goal = { stat = "shod", n = 1 }, reward = { money = 60, sugar = 5 } },
+	{ id = "g4", npc = "galya", title = "Тыква к празднику", text = "Принеси мне тыкву — её можно найти в земле с металлоискателем.", goal = { item = "pumpkin", n = 1 }, reward = { money = 80, pollen = 1 } },
 
 	{ id = "p1", npc = "petr", title = "Первый клад", text = "Найди клад металлоискателем.", goal = { stat = "treasures", n = 1 }, reward = { money = 40 } },
 	{ id = "p2", npc = "petr", title = "Старые подковы", text = "Принеси мне 2 старые подковы.", goal = { item = "oldShoe", n = 2 }, reward = { money = 90, dye_blue = 1 } },
@@ -79,7 +79,7 @@ Q.QUESTS = {
 	{ id = "v4", npc = "vanya", title = "Друзья леса", text = "Поймай 3 зайчиков.", goal = { stat = "bunnies", n = 3 }, reward = { money = 60, sugar = 5 } },
 
 	{ id = "f1", npc = "lira", title = "Волшебная лошадка", text = "Поймай волшебную лошадку: пегаса, единорога, огненную или ледяную.", goal = { stat = "magicCaught", n = 1 }, reward = { money = 100, dye_rainbow = 1 } },
-	{ id = "f2", npc = "lira", title = "Небесная прогулка", text = "Пролети на пегасе 30 секунд.", goal = { stat = "flyTime", n = 30 }, reward = { money = 120, seed_magic = 2 } },
+	{ id = "f2", npc = "lira", title = "Небесная прогулка", text = "Пролети на пегасе 30 секунд.", goal = { stat = "flyTime", n = 30 }, reward = { money = 120, pollen = 1 } },
 	{ id = "f3", npc = "lira", title = "Волшебный жеребёнок", text = "Вырасти жеребёнка с волшебными чертами.", goal = { stat = "magicFoals", n = 1 }, reward = { money = 200, dye_gold = 1 } },
 	{ id = "f4", npc = "lira", title = "Пыльца для фей", text = "Принеси 2 щепотки волшебной пыльцы.", goal = { item = "pollen", n = 2 }, reward = { money = 150, dye_rainbow = 1 } },
 
@@ -111,12 +111,12 @@ Q.QUESTS = {
 -- задания с доски в деревне — повторяются
 Q.BOARD = {
 	{ title = "Ловец лошадей", text = "Поймай 2 лошади.", goal = { stat = "caught", n = 2 }, reward = { money = 70 } },
-	{ title = "Урожайный день", text = "Собери урожай 3 раза.", goal = { stat = "harvest_total", n = 3 }, reward = { money = 60 } },
+	{ title = "Чистюля", text = "Почисти лошадей щёткой 3 раза.", goal = { stat = "brushed", n = 3 }, reward = { money = 60 } },
 	{ title = "Охотник за кладами", text = "Найди 2 клада.", goal = { stat = "treasures", n = 2 }, reward = { money = 80 } },
 	{ title = "Быстрые копыта", text = "Займи место на пьедестале в скачках (1–3).", goal = { stat = "podiums", n = 1 }, reward = { money = 80 } },
 	{ title = "Грибник", text = "Собери 6 грибов.", goal = { stat = "mushrooms", n = 6 }, reward = { money = 50 } },
 	{ title = "Зайкин друг", text = "Поймай 2 зайчиков.", goal = { stat = "bunnies", n = 2 }, reward = { money = 50 } },
-	{ title = "Строитель", text = "Построй 2 любые постройки.", goal = { stat = "built_total", n = 2 }, reward = { money = 50 } },
+	{ title = "Артистка", text = "Покажи верхом 3 трюка.", goal = { stat = "tricks", n = 3 }, reward = { money = 50 } },
 	{ title = "Прыгунья", text = "Пройди любой маршрут конкура.", goal = { stat = "jumpRounds", n = 1 }, reward = { money = 60 } },
 }
 

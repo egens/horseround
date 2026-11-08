@@ -13,6 +13,7 @@ local Decor = require(Client.Decor)
 local Effects = require(Client.Effects)
 local Controls = require(Client.Controls)
 local Sound = require(Client.Sound)
+local Glow = require(Client.Glow)
 local Hud = require(Client.UI.Hud)
 local Windows = require(Client.UI.Windows)
 local Minigames = require(Client.UI.Minigames)
@@ -32,12 +33,12 @@ workspace:GetAttributeChangedSignal("GroundY"):Connect(World.syncGround)
 Hud.init()
 Hud.windows = Windows
 Windows.build(Hud.gui)
-Windows.controls = Controls
 Minigames.init(Hud.gui)
 Render.init()
 Decor.init()
 Effects.init()
-Controls.init(Windows, Minigames)
+Glow.init()
+Controls.init(Windows, Minigames, Hud)
 
 Net.get("Toast").OnClientEvent:Connect(Hud.toast)
 State.on("toast", Hud.toast)
@@ -68,5 +69,5 @@ Net.get("Open").OnClientEvent:Connect(function(name, data)
 	end
 end)
 
--- сервер, привет: пришли постройки, грибы и профиль
+-- сервер, привет: пришли грибы и профиль
 Net.get("Act"):FireServer("hello")

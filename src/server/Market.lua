@@ -25,7 +25,7 @@ local STOCK_BREEDS = { "arab", "akhal", "orlov", "friesian", "haflinger", "appal
 local MAGIC_BREEDS = { "crystalhorse", "waterhorse", "sunhorse", "rainbowhorse", "mushroomhorse", "sandhorse", "stonehorse", "leafhorse", "damphorse", "icehorse", "firehorse", "pegasus", "unicorn", "cloudhorse" }
 
 Market.SWAPS = {
-	{ id = "s1", give = { mushroom = 5 }, get = { seed_magic = 1 } },
+	{ id = "s1", give = { mushroom = 5 }, get = { pollen = 1 } },
 	{ id = "s2", give = { glowshroom = 3 }, get = { dye_rainbow = 1 } },
 	{ id = "s3", give = { pumpkin = 2 }, get = { oats = 10 } },
 	{ id = "s4", give = { carrot = 10 }, get = { dye_pink = 1 } },

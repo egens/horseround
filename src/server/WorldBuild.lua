@@ -94,7 +94,7 @@ local measureGround
 -- цвета материалов и воды: каждая настройка отдельно, чтобы одна ошибка не сорвала постройку рельефа
 local function setColors()
 	local colors = {
-		{ M.Grass, "#86b84f" }, { M.LeafyGrass, "#4f8a3a" }, { M.Salt, "#9b87c9" }, { M.Sand, "#e8cf8f" }, { M.Snow, "#f4f8fb" },
+		{ M.LeafyGrass, "#4f8a3a" }, { M.Salt, "#9b87c9" }, { M.Sand, "#e8cf8f" }, { M.Snow, "#f4f8fb" },
 		{ M.Rock, "#8a8580" }, { M.Slate, "#4a4744" }, { M.Basalt, "#3b3436" }, { M.Ground, "#b9a35f" }, { M.Mud, "#b08d5c" },
 		{ M.Sandstone, "#7a3b2e" }, { M.Cobblestone, "#b8a98f" }, { M.Glacier, "#cfe9ff" }, { M.CrackedLava, "#ff6a00" },
 	}
@@ -102,8 +102,8 @@ local function setColors()
 		local ok, err = pcall(function() T:SetMaterialColor(c[1], col(c[2])) end)
 		if not ok then warn("[HorseFarm] цвет материала " .. tostring(c[1]) .. ": " .. tostring(err)) end
 	end
-	-- Terrain.Decoration (декоративная трава) из скрипта не меняется — выключи её в Studio,
-	-- если трава закрывает копыта: Workspace → Terrain → Decoration
+	-- Трава (материал Grass) — стандартного цвета Roblox. Живая колышущаяся трава (Terrain.Decoration)
+	-- из скрипта не включается, поэтому она задана в default.project.json (Workspace → Terrain).
 	for k, v in pairs({ WaterColor = col("#3f8fc0"), WaterTransparency = 0.35, WaterReflectance = 0.6, WaterWaveSize = 0.08 }) do
 		pcall(function() T[k] = v end)
 	end

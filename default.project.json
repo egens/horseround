@@ -26,6 +26,12 @@
       "$properties": {
         "StreamingEnabled": false,
         "FallenPartsDestroyHeight": -200
+      },
+      "Terrain": {
+        "$className": "Terrain",
+        "$properties": {
+          "Decoration": true
+        }
       }
     },
     "Lighting": {

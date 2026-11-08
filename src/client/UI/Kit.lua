@@ -76,16 +76,24 @@ function Kit.note(parent, text)
 	return Kit.text(parent, text, { bg = C.note, size = 15 })
 end
 
+-- ряд с переносом на новую строку. Высоту считаем сами по AbsoluteContentSize:
+-- AutomaticSize у ряда с Wraps учитывает только первую строку, и следующие блоки наезжают на перенесённые.
 function Kit.row(parent, opts)
 	opts = opts or {}
 	local f = make("Frame", {
-		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = nextOrder(), Parent = parent,
+		Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, LayoutOrder = nextOrder(), Parent = parent,
 	})
-	make("UIListLayout", {
+	local layout = make("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal, Wraps = true, Padding = UDim.new(0, opts.gap or 6),
 		HorizontalAlignment = opts.center and Enum.HorizontalAlignment.Center or Enum.HorizontalAlignment.Left,
-		VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder, Parent = f,
+		VerticalAlignment = opts.top and Enum.VerticalAlignment.Top or Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder, Parent = f,
 	})
+	local function fit()
+		local hgt = layout.AbsoluteContentSize.Y
+		if f.Size.Y.Offset ~= hgt then f.Size = UDim2.new(1, 0, 0, hgt) end
+	end
+	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fit)
+	fit()
 	return f
 end
 function Kit.col(parent, opts)
@@ -178,7 +186,7 @@ function Kit.card(parent, look, lines, extra, opts)
 end
 
 function Kit.grid(parent)
-	return Kit.row(parent, { gap = 8 })
+	return Kit.row(parent, { gap = 8, top = true })
 end
 
 -- образец цвета
