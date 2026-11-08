@@ -1,43 +1,16 @@
 --[[
-	Общие помощники: случайные числа, детерминированный генератор (как в JS-версии),
+	Общие помощники: случайные числа, детерминированный генератор (встроенный Random),
 	смешивание цветов в hex, склонения, работа с таблицами.
 ]]
 local Util = {}
 
-local TWO32 = 4294967296
-
--- Math.imul из JS: 32-битное умножение, результат — беззнаковое 32-битное число
-local function u32(a)
-	return a % TWO32
-end
-local function imul(a, b)
-	a = u32(a)
-	b = u32(b)
-	local ah, al = a // 65536, a % 65536
-	local bh, bl = b // 65536, b % 65536
-	return (al * bl + ((ah * bl + al * bh) % 65536) * 65536) % TWO32
-end
-Util.imul = imul
-Util.u32 = u32
-
-local bxor, bor, rshift = bit32.bxor, bit32.bor, bit32.rshift
-
--- детерминированный генератор mulberry32 — тот же, что World.rng в JS
+-- детерминированный генератор на встроенном Random: одно зерно — одна и та же последовательность
+-- (одинаково на сервере и у всех клиентов, поэтому мир у всех совпадает)
 function Util.rng(seed)
-	local s = u32(math.floor(seed))
+	local r = Random.new(math.floor(seed))
 	return function()
-		s = u32(s + 0x6D2B79F5)
-		local t = imul(bxor(s, rshift(s, 15)), bor(1, s))
-		t = bxor(u32(t + imul(bxor(t, rshift(t, 7)), bor(61, t))), t)
-		return bxor(t, rshift(t, 14)) / TWO32
+		return r:NextNumber()
 	end
-end
-
--- хеш двух целых (для шума)
-function Util.hash2(ix, iy, s)
-	local h = bxor(imul(ix, 374761393), imul(iy, 668265263), imul(s, 1442695041))
-	h = imul(bxor(h, rshift(h, 13)), 1274126177)
-	return bxor(h, rshift(h, 16)) / TWO32
 end
 
 function Util.rand(a, b)

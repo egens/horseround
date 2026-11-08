@@ -5,7 +5,7 @@
 	Город в середине, биомы — вокруг. Границы биомов, острова и озёра неровные (шум и гармоники).
 ]]
 local Util = require(script.Parent.Util)
-local rng, hash2, hypot = Util.rng, Util.hash2, Util.hypot
+local rng, hypot = Util.rng, Util.hypot
 
 local World = {}
 local K = 0.1
@@ -23,13 +23,9 @@ end
 local function shp(p) return { p[1] + OX, p[2] + OY } end
 
 --[[ ---------- шум и неровные формы ---------- ]]
+-- плавный шум от 0 до 1 на встроенном math.noise (третья координата — «зерно»)
 local function vnoise(x, y, s)
-	local ix, iy = math.floor(x), math.floor(y)
-	local fx, fy = x - ix, y - iy
-	local u, v = fx * fx * (3 - 2 * fx), fy * fy * (3 - 2 * fy)
-	local a, b = hash2(ix, iy, s), hash2(ix + 1, iy, s)
-	local c, d = hash2(ix, iy + 1, s), hash2(ix + 1, iy + 1, s)
-	return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
+	return math.clamp(math.noise(x, y, s * 7.31 + 0.5) + 0.5, 0, 1)
 end
 World.vnoise = vnoise
 local function warp(x, y)
