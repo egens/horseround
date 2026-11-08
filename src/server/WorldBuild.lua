@@ -639,18 +639,33 @@ measureGround = function()
 	print(string.format("[HorseFarm] поверхность земли на высоте %.2f стада", g))
 end
 
+-- этап постройки: ошибка в одном этапе не должна останавливать остальные
+local function stage(name, fn)
+	local t0 = os.clock()
+	local ok, err = xpcall(fn, debug.traceback)
+	if ok then
+		print(string.format("[HorseFarm] %s: %.1f с", name, os.clock() - t0))
+	else
+		warn("[HorseFarm] ОШИБКА на этапе «" .. name .. "»: " .. tostring(err))
+	end
+	return ok
+end
+
 function WB.build()
 	root = Instance.new("Folder")
 	root.Name = "World"
 	root.Parent = workspace
 	WB.root = root
-	buildTerrain()
-	measureGround()
-	buildBarriers()
-	buildFarm()
-	buildVillage()
-	buildSeaside()
-	buildCaveAndSky()
+	stage("рельеф", buildTerrain)
+	if not stage("замер земли", measureGround) then
+		World.GROUND = 0
+		workspace:SetAttribute("GroundY", 0)
+	end
+	stage("границы воды", buildBarriers)
+	stage("ферма", buildFarm)
+	stage("деревня и рынок", buildVillage)
+	stage("пристани и острова", buildSeaside)
+	stage("пещера, небо и железная дорога", buildCaveAndSky)
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Anchored = true
 	spawn.Size = Vector3.new(6, 0.4, 6)
@@ -661,6 +676,7 @@ function WB.build()
 	spawn.Duration = 0
 	spawn.Parent = root
 end
+WB.stage = stage
 
 -- фонари ночью
 function WB.updateLamps(night)

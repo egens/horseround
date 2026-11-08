@@ -49,17 +49,33 @@ Hud.init(G)
 
 -- мир строится до появления персонажей
 local worldReady = false
-task.spawn(function()
-	local t0 = os.clock()
-	WorldBuild.build()
-	People.build(WorldBuild.root)
-	Herds.spawnAll()
-	Specials.AI.init()
-	Specials.Creatures.init()
-	worldReady = true
-	print(string.format("[HorseFarm] мир построен за %.1f с", os.clock() - t0))
+local function loadWaiting()
 	for _, s in pairs(G.sessions) do
 		if s.player.Parent and not s.player.Character then s.player:LoadCharacter() end
+	end
+end
+task.spawn(function()
+	local t0 = os.clock()
+	print("[HorseFarm] строим мир…")
+	local stage = WorldBuild.stage
+	local ok = stage("мир", WorldBuild.build)
+	if workspace:GetAttribute("GroundY") == nil then workspace:SetAttribute("GroundY", World.GROUND) end
+	stage("жители", function() People.build(WorldBuild.root) end)
+	stage("табуны", Herds.spawnAll)
+	stage("ИИ-игроки", Specials.AI.init)
+	stage("олени и привидения", Specials.Creatures.init)
+	if not ok then warn("[HorseFarm] мир построен с ошибками — смотри сообщения выше") end
+	worldReady = true
+	print(string.format("[HorseFarm] мир построен за %.1f с", os.clock() - t0))
+	loadWaiting()
+end)
+-- на всякий случай: если постройка зависла, всё равно впустить игроков через 45 секунд
+task.delay(45, function()
+	if not worldReady then
+		warn("[HorseFarm] мир строится слишком долго — впускаем игроков как есть")
+		if workspace:GetAttribute("GroundY") == nil then workspace:SetAttribute("GroundY", World.GROUND) end
+		worldReady = true
+		loadWaiting()
 	end
 end)
 
@@ -105,7 +121,8 @@ local function onPlayerAdded(player)
 	sess.ready = true
 	Farm.syncSolids()
 	player.CharacterAdded:Connect(function(char) onCharacter(sess, char) end)
-	if worldReady then player:LoadCharacter() end
+	if player.Character then task.spawn(onCharacter, sess, player.Character) end
+	if worldReady and not player.Character then player:LoadCharacter() end
 	if not ok then
 		G.toast(sess, "⚠️ Не получилось загрузить сохранение — играем без него. Прогресс сейчас не сохранится.", "warn")
 	end

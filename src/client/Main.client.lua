@@ -22,8 +22,12 @@ State.init()
 
 -- дождаться, пока сервер замерит высоту земли (после постройки рельефа)
 local World = require(Shared.World)
-while workspace:GetAttribute("GroundY") == nil do workspace:GetAttributeChangedSignal("GroundY"):Wait() end
+local waitStart = os.clock()
+while workspace:GetAttribute("GroundY") == nil and os.clock() - waitStart < 60 do task.wait(0.2) end
+if workspace:GetAttribute("GroundY") == nil then warn("[HorseFarm] сервер не прислал высоту земли — считаем её нулевой") end
 World.syncGround()
+-- высота могла прийти позже — подхватить
+workspace:GetAttributeChangedSignal("GroundY"):Connect(World.syncGround)
 
 Hud.init()
 Hud.windows = Windows
