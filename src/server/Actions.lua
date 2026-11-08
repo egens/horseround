@@ -23,7 +23,8 @@ function Actions.sellPrice(h, wildOne)
 	if wildOne then p *= 0.85 end
 	return math.floor(p / 5 + 0.5) * 5
 end
-local function atFarm(sess) return Stalls.atFarm(sess.P, sess.p.x, sess.p.y) end
+-- денник доступен откуда угодно: кормить, чистить, выпускать в леваду, скрещивать и т. д. можно из любого места
+local function atFarm(sess) return true end
 local function nearSell(sess)
 	return hypot(sess.p.x - (World.SELL.x + World.SELL.w / 2), sess.p.y - (World.SELL.y + World.SELL.h / 2)) < 170
 end

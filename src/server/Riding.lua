@@ -203,7 +203,6 @@ end
 --[[ ---------- сесть и слезть ---------- ]]
 function Riding.mount(sess, h)
 	local P, p = sess.P, sess.p
-	if not Stalls.atFarm(P, p.x, p.y) then return G.toast(sess, "Подойди к конюшне или леваде") end
 	if not P.tack.saddle or not P.tack.bridle then return G.toast(sess, "Нужны седло и уздечка — купи их в повозке «Корм и амуниция»", "warn") end
 	if not Horses.canRide(h) then
 		return G.toast(sess, "На жеребёнке можно ездить только с " .. Horses.RIDE_AGE .. " лет. " .. h.name .. " сейчас " .. Horses.ageText(h) .. " — гуляй с ним, корми и играй!", "warn")

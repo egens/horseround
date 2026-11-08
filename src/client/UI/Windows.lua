@@ -5,6 +5,7 @@
 ]]
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Util = require(Shared.Util)
@@ -71,8 +72,7 @@ end
 --[[ ================= конюшня ================= ]]
 views.stable = function(B, d)
 	local P = State.P
-	local can = d.can
-	if not can then Kit.note(B, "Ты далеко от конюшни — можно только посмотреть. Подойди ближе, чтобы ухаживать за лошадьми.") end
+	local can = true -- денник доступен откуда угодно
 	local total = 0
 	for _, grp in ipairs(Stalls.groups(P)) do
 		total += #grp.list
@@ -86,7 +86,7 @@ views.stable = function(B, d)
 				local num = grp.title == "Ферма" and i + 1 or (i - 1000) % 5 + 1
 				local h = Stalls.horseIn(P, i)
 				if not h then
-					Kit.card(grid, nil, { "№" .. num, "свободный денник" }, nil, { width = 150 })
+					Kit.card(grid, nil, { "№" .. num, "свободный денник" }, nil, { width = 176 })
 				else
 					local ph = Horses.pheno(h)
 					Kit.card(grid, Horses.look(h), { "№" .. num .. "  " .. Kit.sexIcon(h) .. " " .. esc(h.name), esc(ph.name), esc(Genetics.BREEDS[h.breed].name) .. ", " .. Horses.ageText(h), statusBadges(h) },
@@ -103,8 +103,7 @@ end
 views.horse = function(B, d)
 	local P = State.P
 	local h = State.byId(d.id)
-	local can = d.can
-	if can == nil then can = State.hud and State.hud.atFarm end
+	local can = true -- денник доступен откуда угодно
 	Kit.button(Kit.row(B), "← Все лошади", function() open("stable", { can = can }) end, { color = "ghost" })
 	if not h then
 		Kit.text(B, "Этой лошади больше нет на ферме.")
@@ -923,6 +922,7 @@ local function clearBody()
 		if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
 	end
 end
+local renderToken
 function Win.render()
 	if not current or not State.P then return end
 	local v = views[current.name]
@@ -937,6 +937,13 @@ function Win.render()
 	titleL.Text = title or ""
 	body.CanvasPosition = scroll
 	lastRender = os.clock()
+	-- высоты рядов пересчитываются на следующем кадре — тогда и вернуть прокрутку, иначе окно прыгает наверх
+	local token = {}
+	renderToken = token
+	task.spawn(function()
+		RunService.RenderStepped:Wait()
+		if renderToken == token then body.CanvasPosition = scroll end
+	end)
 end
 function Win.open(name, data)
 	if name == "close" then return Win.close() end
@@ -976,7 +983,8 @@ function Win.build(parentGui)
 		if not current then return end
 		if UserInputService:GetFocusedTextBox() then return end
 		local recentAction = os.clock() - State.actT < 2.5
-		if recentAction or os.clock() - lastRender > 3 then Win.render() end
+		-- без действий — не чаще раза в 10 секунд, чтобы карточки с портретами не мигали
+		if recentAction or os.clock() - lastRender > 10 then Win.render() end
 	end)
 end
 

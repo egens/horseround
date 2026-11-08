@@ -92,7 +92,7 @@ function Hud.build()
 	local right = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.new(0.44, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
 	hlist(right, Enum.HorizontalAlignment.Right)
 	local W = function(name, data) return function() Hud.windows.open(name, data) end end
-	hudButton(right, "🐴 Лошади", function() Hud.windows.open("stable", { can = State.hud and State.hud.atFarm }) end)
+	hudButton(right, "🐴 Лошади", function() Hud.windows.open("stable", { can = true }) end)
 	el.quests = hudButton(right, "📜", W("quests"))
 	hudButton(right, "👥", W("players"))
 	hudButton(right, "🗺️", function() Hud.toggleMap() end)
