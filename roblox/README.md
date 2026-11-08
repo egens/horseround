@@ -19,6 +19,23 @@ rojo serve
 *Game Settings → Security → Enable Studio Access to API Services* (без этого игра работает,
 но прогресс не сохраняется).
 
+## Автодеплой
+
+Workflow `.github/workflows/roblox-deploy.yml` на каждый пуш в `main`, который меняет `roblox/`,
+собирает место через Rojo и публикует его через Roblox Open Cloud. Запустить вручную можно
+во вкладке Actions («Деплой в Roblox» → Run workflow); там же можно выбрать `Saved` —
+сохранить версию, не выкладывая её игрокам.
+
+Один раз настроить:
+1. Опубликовать игру из Studio, чтобы появились experience и место; взять их ID в Creator Dashboard.
+2. На create.roblox.com → Open Cloud → API Keys создать ключ с доступом
+   `universe-places` → `write` для этого experience (разрешённые IP: `0.0.0.0/0`).
+3. В репозитории: Settings → Secrets and variables → Actions → добавить
+   `ROBLOX_API_KEY`, `ROBLOX_UNIVERSE_ID`, `ROBLOX_PLACE_ID`.
+
+Пока секретов нет, workflow только проверяет, что место собирается.
+Публикация заменяет место целиком: настройки места держи в `default.project.json`, а не в Studio.
+
 ## Что перенесено
 
 Всё игровое содержимое JS-версии, с той же логикой и цифрами:
