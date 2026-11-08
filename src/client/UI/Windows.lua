@@ -14,6 +14,7 @@ local Horses = require(Shared.Horses)
 local Genetics = require(Shared.Genetics)
 local Stalls = require(Shared.Stalls)
 local Q = require(Shared.QuestData)
+local BuildInfo = require(Shared.BuildInfo)
 
 local Client = script.Parent.Parent
 local State = require(Client.State)
@@ -894,6 +895,12 @@ views.help = function(B)
 		"🌙 <b>День и ночь</b>: сутки — 8 минут. Ночью табун спит, и подкрасться к лошадям легче.",
 	}) do Kit.text(B, s, { size = 15 }) end
 	Kit.text(B, "Игра сохраняется сама.")
+	-- когда обновлялся сервер: время сборки из CI, иначе — время запуска сервера (по Москве, UTC+3)
+	local t, what = BuildInfo.builtAt, "Сервер обновлён"
+	if type(t) ~= "number" then t, what = workspace:GetAttribute("ServerStartedAt"), "Сервер запущен" end
+	if type(t) == "number" then
+		Kit.small(B, "🕒 " .. what .. ": " .. os.date("!%d.%m.%Y %H:%M", t + 3 * 3600) .. " (МСК)")
+	end
 	local r = Kit.row(B, { center = true })
 	Kit.button(r, "Играть!", function()
 		act("seenHelp")

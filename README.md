@@ -150,6 +150,8 @@ Workflow `.github/workflows/roblox-deploy.yml` на каждый пуш в `main
    `ROBLOX_API_KEY`, `ROBLOX_UNIVERSE_ID`, `ROBLOX_PLACE_ID`.
 
 Пока секретов нет, workflow только проверяет, что место собирается.
+Перед сборкой workflow записывает время сборки в `src/shared/BuildInfo.lua` — оно видно внизу справки «❓»
+(«Сервер обновлён: дд.мм.гггг чч:мм (МСК)»). При локальной сборке там показывается время запуска сервера.
 Публикация заменяет место целиком: настройки места держи в `default.project.json`, а не в Studio.
 
 ## Мир и модели

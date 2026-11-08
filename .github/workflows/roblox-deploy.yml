@@ -62,6 +62,11 @@ jobs:
       - name: Добавить Rojo в PATH
         run: echo "$HOME/.rojo" >> "$GITHUB_PATH"
 
+      - name: Записать время сборки
+        run: |
+          printf -- '-- создаётся в CI перед сборкой\nreturn { builtAt = %s }\n' "$(date +%s)" > src/shared/BuildInfo.lua
+          cat src/shared/BuildInfo.lua
+
       - name: Собрать место
         run: |
           rojo --version

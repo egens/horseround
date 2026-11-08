@@ -29,6 +29,8 @@ local WorldBuild = require(Server.WorldBuild)
 local People = require(Server.People)
 
 Players.CharacterAutoLoads = false
+-- когда запустился сервер (для справки, если время сборки неизвестно)
+workspace:SetAttribute("ServerStartedAt", os.time())
 G.initRemotes()
 G.modules = {
 	Entities = Entities, Herds = Herds, Owned = Owned, Riding = Riding, Exercises = Exercises, Events = Events,
