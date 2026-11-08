@@ -91,27 +91,22 @@ local GROUND = {
 	i1 = M.Grass, i2 = M.Grass, i3 = M.Grass, i4 = M.Sandstone,
 }
 local measureGround
+-- цвета материалов и воды: каждая настройка отдельно, чтобы одна ошибка не сорвала постройку рельефа
 local function setColors()
-	T:SetMaterialColor(M.Grass, col("#86b84f"))
-	T:SetMaterialColor(M.LeafyGrass, col("#4f8a3a"))
-	T:SetMaterialColor(M.Salt, col("#9b87c9"))
-	T:SetMaterialColor(M.Sand, col("#e8cf8f"))
-	T:SetMaterialColor(M.Snow, col("#f4f8fb"))
-	T:SetMaterialColor(M.Rock, col("#8a8580"))
-	T:SetMaterialColor(M.Slate, col("#4a4744"))
-	T:SetMaterialColor(M.Basalt, col("#3b3436"))
-	T:SetMaterialColor(M.Ground, col("#b9a35f"))
-	T:SetMaterialColor(M.Mud, col("#b08d5c"))
-	T:SetMaterialColor(M.Sandstone, col("#7a3b2e"))
-	T:SetMaterialColor(M.Cobblestone, col("#b8a98f"))
-	T:SetMaterialColor(M.Glacier, col("#cfe9ff"))
-	T:SetMaterialColor(M.CrackedLava, col("#ff6a00"))
-	-- декоративная трава прячет низ лошадей, копыт и построек — выключаем
-	T.Decoration = false
-	T.WaterColor = col("#3f8fc0")
-	T.WaterTransparency = 0.35
-	T.WaterReflectance = 0.6
-	T.WaterWaveSize = 0.08
+	local colors = {
+		{ M.Grass, "#86b84f" }, { M.LeafyGrass, "#4f8a3a" }, { M.Salt, "#9b87c9" }, { M.Sand, "#e8cf8f" }, { M.Snow, "#f4f8fb" },
+		{ M.Rock, "#8a8580" }, { M.Slate, "#4a4744" }, { M.Basalt, "#3b3436" }, { M.Ground, "#b9a35f" }, { M.Mud, "#b08d5c" },
+		{ M.Sandstone, "#7a3b2e" }, { M.Cobblestone, "#b8a98f" }, { M.Glacier, "#cfe9ff" }, { M.CrackedLava, "#ff6a00" },
+	}
+	for _, c in ipairs(colors) do
+		local ok, err = pcall(function() T:SetMaterialColor(c[1], col(c[2])) end)
+		if not ok then warn("[HorseFarm] цвет материала " .. tostring(c[1]) .. ": " .. tostring(err)) end
+	end
+	-- Terrain.Decoration (декоративная трава) из скрипта не меняется — выключи её в Studio,
+	-- если трава закрывает копыта: Workspace → Terrain → Decoration
+	for k, v in pairs({ WaterColor = col("#3f8fc0"), WaterTransparency = 0.35, WaterReflectance = 0.6, WaterWaveSize = 0.08 }) do
+		pcall(function() T[k] = v end)
+	end
 end
 
 local function buildTerrain()
@@ -657,6 +652,15 @@ function WB.build()
 	root.Parent = workspace
 	WB.root = root
 	stage("рельеф", buildTerrain)
+	-- страховка: если рельеф не построился, игрок не провалится в пустоту
+	local floor = Instance.new("Part")
+	floor.Name = "SafetyFloor"
+	floor.Anchored = true
+	floor.Size = Vector3.new(World.W * K + 40, 2, World.H * K + 40)
+	floor.CFrame = CFrame.new(World.W * K / 2, -15, World.H * K / 2)
+	floor.Color = col("#86b84f")
+	floor.Material = M.Grass
+	floor.Parent = root
 	if not stage("замер земли", measureGround) then
 		World.GROUND = 0
 		workspace:SetAttribute("GroundY", 0)
