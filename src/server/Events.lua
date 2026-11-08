@@ -16,6 +16,20 @@ local rand, clamp, hypot, pick = Util.rand, Util.clamp, Util.hypot, Util.pick
 local nextT = rand(35, 60)
 local rain = nil
 local wet, rainbowT, puddle = 0, 0, 0
+local rainbowAt = nil -- где стоит радуга: { x, y, a } (пиксели карты и направление), одна на всех
+-- радуга встаёт в стороне от игроков: в 450 стадах от их середины, в случайном направлении
+local function placeRainbow()
+	local sx, sy, n = 0, 0, 0
+	for _, s in ipairs(G.each()) do
+		if s.p.y <= World.H then sx += s.p.x; sy += s.p.y; n += 1 end
+	end
+	local cx, cy = World.START.x, World.START.y
+	if n > 0 then cx, cy = sx / n, sy / n end
+	local a = math.random() * math.pi * 2
+	local x = Util.clamp(cx + math.cos(a) * 4500, 0, World.W)
+	local y = Util.clamp(cy + math.sin(a) * 4500, 0, World.H)
+	rainbowAt = { x = math.floor(x), y = math.floor(y), a = math.floor(a * 1000) / 1000 }
+end
 local bunnies = {}
 local shoe = nil
 local fairT, invite = 0, 0
@@ -611,6 +625,7 @@ function Events.update(dt)
 			rain = nil
 			if G.daylight() > 0.5 then
 				rainbowT = 60
+				placeRainbow()
 				G.toastAll("🌈 Дождь закончился — смотри, радуга! И в лужах она отражается", "good")
 			else
 				G.toastAll("Дождь закончился")
@@ -693,7 +708,7 @@ function Events.state()
 		if x.state ~= "gone" then table.insert(b, { math.floor(x.x), math.floor(x.y) }) end
 	end
 	return {
-		raining = rain ~= nil, wet = wet, puddle = puddle, rainbow = rainbowT, fair = fairT > 0, invite = invite,
+		raining = rain ~= nil, wet = wet, puddle = puddle, rainbow = rainbowT, rainbowAt = rainbowT > 0 and rainbowAt or nil, fair = fairT > 0, invite = invite,
 		shoe = shoe and { x = shoe.x, y = shoe.y } or nil, bunnies = b,
 		race = race and { state = race.state, rivals = Util.map(race.rivals, function(r) return { math.floor(r.h.x), math.floor(r.h.y) } end) } or nil,
 	}

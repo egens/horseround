@@ -242,7 +242,7 @@ local function worldState()
 	local tr = Specials.Train.state()
 	local ev = Events.state()
 	return {
-		clock = G.clock, raining = ev.raining, wet = ev.wet, puddle = ev.puddle, rainbow = ev.rainbow, fair = ev.fair,
+		clock = G.clock, raining = ev.raining, wet = ev.wet, puddle = ev.puddle, rainbow = ev.rainbow, rainbowAt = ev.rainbowAt, fair = ev.fair,
 		shoe = ev.shoe, bunnies = ev.bunnies, race = ev.race,
 		train = tr and { x = tr.x, state = tr.state } or nil,
 		holiday = Specials.Holidays.current(),

@@ -191,17 +191,21 @@ local function buildRainbow()
 	rainbowModel.Parent = folder
 end
 local rainbowA = 0
+local rainbowPlaced = nil
 local function updateRainbow(dt)
-	local target = (State.world.rainbow or 0) > 0 and math.min(1, State.world.rainbow / 5) or 0
+	-- радуга стоит на месте в мире (место и направление выбирает сервер, одно на всех), камера её не двигает
+	local at = State.world.rainbowAt
+	local target = (State.world.rainbow or 0) > 0 and at and math.min(1, State.world.rainbow / 5) or 0
 	local x, y = myPos()
 	if not x or y > World.H then target = 0 end
 	rainbowA += (target - rainbowA) * math.min(1, dt)
-	local cam = workspace.CurrentCamera
-	if rainbowA > 0.01 and cam then
-		local look = cam.CFrame.LookVector
-		local flat = Vector3.new(look.X, 0, look.Z).Unit
-		local center = cam.CFrame.Position + flat * 700 + Vector3.new(0, -80, 0)
-		rainbowModel:PivotTo(CFrame.lookAt(center, center + flat))
+	if at and not (rainbowPlaced and rainbowPlaced.x == at.x and rainbowPlaced.y == at.y and rainbowPlaced.a == at.a) then
+		rainbowPlaced = at
+		-- центр арки чуть ниже земли, чтобы концы радуги уходили в землю
+		local center = World.toStuds(at.x, at.y, World.GROUND - 40)
+		local dir = Vector3.new(math.cos(at.a), 0, math.sin(at.a))
+		-- арка повёрнута лицом к игрокам: они в стороне, обратной направлению dir
+		rainbowModel:PivotTo(CFrame.lookAt(center, center + dir))
 	end
 	local tr = 1 - rainbowA * 0.55
 	for _, p in ipairs(rainbowModel:GetChildren()) do
