@@ -1,0 +1,71 @@
+# Автодеплой в Roblox: собирает проект через Rojo и публикует место через Open Cloud.
+# Нужны секреты репозитория: ROBLOX_API_KEY (доступ universe-places: write),
+# ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID. Без них сборка проверяется, но публикация пропускается.
+name: Деплой в Roblox
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "default.project.json"
+      - ".github/workflows/roblox-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      versionType:
+        description: "Published — сразу игрокам, Saved — только сохранить"
+        type: choice
+        options: [Published, Saved]
+        default: Published
+
+concurrency:
+  group: roblox-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ROJO_VERSION: "7.4.4"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить Rojo
+        run: |
+          curl -fsSL -o rojo.zip "https://github.com/rojo-rbx/rojo/releases/download/v${ROJO_VERSION}/rojo-${ROJO_VERSION}-linux-x86_64.zip"
+          unzip -q rojo.zip -d "$HOME/.rojo"
+          chmod +x "$HOME/.rojo/rojo"
+          echo "$HOME/.rojo" >> "$GITHUB_PATH"
+
+      - name: Собрать место
+        run: |
+          rojo --version
+          rojo build default.project.json -o HorseFarm.rbxl
+          ls -l HorseFarm.rbxl
+
+      - name: Опубликовать в Roblox
+        env:
+          API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+          UNIVERSE_ID: ${{ secrets.ROBLOX_UNIVERSE_ID }}
+          PLACE_ID: ${{ secrets.ROBLOX_PLACE_ID }}
+          VERSION_TYPE: ${{ inputs.versionType || 'Published' }}
+        run: |
+          if [ -z "$API_KEY" ] || [ -z "$UNIVERSE_ID" ] || [ -z "$PLACE_ID" ]; then
+            echo "::warning::Секреты ROBLOX_* не заданы — публикация пропущена (сборка прошла)."
+            exit 0
+          fi
+          code=$(curl -sS -o response.json -w "%{http_code}" -X POST \
+            "https://apis.roblox.com/universes/v1/${UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=${VERSION_TYPE}" \
+            -H "x-api-key: ${API_KEY}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @HorseFarm.rbxl)
+          cat response.json; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Roblox ответил HTTP $code"
+            exit 1
+          fi
+          echo "Опубликована версия $(grep -o '"versionNumber":[0-9]*' response.json | cut -d: -f2) ($VERSION_TYPE)"
