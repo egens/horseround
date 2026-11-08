@@ -1,6 +1,6 @@
 --[[
 	Состояние на клиенте: профиль игрока, строка состояния (HUD), общее состояние мира,
-	постройки, скачки. Модули подписываются на изменения.
+	скачки. Модули подписываются на изменения.
 ]]
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Net = require(Shared.Net)
@@ -9,7 +9,6 @@ local State = {
 	P = nil,          -- профиль
 	hud = nil,        -- строка состояния
 	world = { clock = 480, picked = {} },
-	builds = {},
 	race = nil,
 	course = nil,
 	actT = 0,         -- когда отправили последнее действие
@@ -86,10 +85,6 @@ function State.init()
 			State.world.picked = picked
 			State.emit("world", ws)
 		end
-	end)
-	Net.get("Builds").OnClientEvent:Connect(function(list)
-		State.builds = list
-		State.emit("builds", list)
 	end)
 	Net.get("Race").OnClientEvent:Connect(function(r)
 		if r == nil then

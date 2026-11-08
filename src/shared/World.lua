@@ -928,8 +928,6 @@ do
 		end
 	end
 end
--- постройки игроков добавляет сервер (Farm)
-World.BUILD_SOLIDS = {}
 
 -- сетка для быстрых столкновений с деревьями
 local GRID = 200
@@ -977,7 +975,6 @@ end
 -- вытолкнуть круг (x, y, r) из препятствий (для лошадей и существ на сервере)
 function World.collide(e, r)
 	for _, s in ipairs(SOLIDS) do pushOutRect(e, r, s) end
-	for _, s in ipairs(World.BUILD_SOLIDS) do pushOutRect(e, r, s) end
 	for _, t in ipairs(treesNear(e.x, e.y)) do
 		local dx, dy = e.x - t.x, e.y - t.y
 		local d = hypot(dx, dy)
@@ -1048,9 +1045,6 @@ function World.blocked(x, y, r)
 		return bx < s.x + s.w and bx + bw > s.x and by < s.y + s.h and by + bh > s.y
 	end
 	for _, s in ipairs(SOLIDS) do
-		if hit(s) then return true end
-	end
-	for _, s in ipairs(World.BUILD_SOLIDS) do
 		if hit(s) then return true end
 	end
 	for _, t in ipairs(treesNear(x, y)) do

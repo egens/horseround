@@ -131,7 +131,7 @@ function Owned.update(sess, dt)
 		World.collide(led, 16)
 		if d > 1200 then led.x, led.y = back.x, back.y end
 		local isl = Stalls.islandStableHere(p.x, p.y)
-		if not p.fly and (World.inRect(p.x, p.y, World.STABLE, 10) or Stalls.nearSmallStable(P, p.x, p.y) or (isl and World.inRect(p.x, p.y, isl.stable, 20))) then
+		if not p.fly and (World.inRect(p.x, p.y, World.STABLE, 10) or (isl and World.inRect(p.x, p.y, isl.stable, 20))) then
 			local st = Stalls.free(P, isl and isl.id or "main")
 			if st >= 0 then
 				Entities.removeSrc(led)

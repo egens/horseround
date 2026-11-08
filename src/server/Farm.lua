@@ -1,233 +1,23 @@
 --[[
-	Стройка и огород, металлоискатель и клады, сбор грибов, сундук графа (перенос js/farm.js).
-	Постройки каждого игрока хранятся в его профиле, но стоят в общем мире и видны всем.
+	Металлоискатель и клады, сбор грибов, сундук графа (перенос js/farm.js).
+	Стройки и огорода больше нет: на общем сервере чужие постройки только мешали.
 ]]
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Util = require(Shared.Util)
 local World = require(Shared.World)
 local Items = require(Shared.Items)
-local Stalls = require(Shared.Stalls)
 
 local Farm = {}
 local G
 local rand, hypot = Util.rand, Util.hypot
-local B = Items.BUILDS
 
 local spots = {}              -- где зарыты клады (общие)
 local picked = {}             -- сорванные грибы: id → когда вырастут
 local pickedDirty = true
-local buildsDirty = true
 
 function Farm.init(g)
 	G = g
 	while #spots < 14 do table.insert(spots, Farm.newSpot()) end
-end
-
---[[ ================= постройки ================= ]]
--- все постройки онлайн-игроков
-local function allBuilds()
-	local out = {}
-	for _, s in ipairs(G.each()) do
-		for _, b in ipairs(s.P.builds) do table.insert(out, { b = b, sess = s }) end
-	end
-	return out
-end
-function Farm.syncSolids()
-	local list = World.BUILD_SOLIDS
-	table.clear(list)
-	for _, it in ipairs(allBuilds()) do
-		local b = it.b
-		if b.type == "stable5" then
-			for _, w in ipairs(Stalls.stableWalls(b)) do table.insert(list, w) end
-		elseif B[b.type] and B[b.type].solid then
-			table.insert(list, Stalls.rectOf(b))
-		end
-	end
-	buildsDirty = true
-end
-function Farm.markDirty() buildsDirty = true end
-
-local function NO_BUILD()
-	local list = { World.STABLE, World.ARENA, World.JUMPF, World.PADDOCK, World.MOUNTAIN, World.SELL, World.SHOP, World.MARKET }
-	for _, I in ipairs(World.ISLANDS) do
-		table.insert(list, I.stable)
-		table.insert(list, I.pasture)
-		table.insert(list, { x = I.pen.x - I.pen.r, y = I.pen.y - I.pen.r, w = I.pen.r * 2, h = I.pen.r * 2 })
-		table.insert(list, { x = I.pier.x - 240, y = I.pier.y - 80, w = 360, h = 160 })
-	end
-	table.insert(list, { x = World.PIER.x - 80, y = World.PIER.y - 80, w = 360, h = 160 })
-	table.insert(list, { x = World.START.x - 150, y = World.START.y - 150, w = 300, h = 300 })
-	return list
-end
-local noBuild = nil
-
-function Farm.canPlace(sess, btype, x, y, rot)
-	noBuild = noBuild or NO_BUILD()
-	local w, h = Stalls.dims(btype, rot)
-	local r = { x = x - w / 2, y = y - h / 2, w = w, h = h }
-	if r.x < 20 or r.y < 20 or r.x + r.w > World.W - 20 or r.y + r.h > World.H - 20 then return false end
-	local function over(a, q, m)
-		m = m or 0
-		return a.x < q.x + q.w + m and a.x + a.w + m > q.x and a.y < q.y + q.h + m and a.y + a.h + m > q.y
-	end
-	for _, q in ipairs(noBuild) do
-		if over(r, q, 20) then return false end
-	end
-	for _, it in ipairs(allBuilds()) do
-		if over(r, Stalls.rectOf(it.b), 4) then return false end
-	end
-	for i = 0, math.ceil(r.w / 150) do
-		for j = 0, math.ceil(r.h / 150) do
-			for _, t in ipairs(World.treesNear(r.x + i * 150, r.y + j * 150)) do
-				if World.inRect(t.x, t.y, r, (t.cr or 9) + 4) then return false end
-			end
-		end
-	end
-	for i = 0, 4 do
-		for j = 0, 4 do
-			if World.blocked(r.x + r.w * i / 4, r.y + r.h * j / 4, 6) then return false end
-		end
-	end
-	-- не ставить на игроков
-	for _, s in ipairs(G.each()) do
-		if btype ~= "bed" and btype ~= "flowerbed" and btype ~= "stable5" and math.abs(s.p.x - x) < w / 2 + 12 and math.abs(s.p.y - y) < h / 2 + 12 then return false end
-	end
-	return true
-end
-
-function Farm.build(sess, btype, x, y, rot)
-	local P = sess.P
-	local d = B[btype]
-	if not d then return end
-	x, y = math.floor((tonumber(x) or 0) / 10 + 0.5) * 10, math.floor((tonumber(y) or 0) / 10 + 0.5) * 10
-	rot = rot == 1 and 1 or 0
-	if hypot(x - sess.p.x, y - sess.p.y) > 900 then return G.toast(sess, "Слишком далеко — подойди ближе", "warn") end
-	if not Farm.canPlace(sess, btype, x, y, rot) then
-		G.toast(sess, "Сюда поставить нельзя", "warn")
-		G.sfx(sess, "fail")
-		return
-	end
-	if P.money < d.price then return G.toast(sess, "Не хватает монет", "warn") end
-	P.money -= d.price
-	P.buildId = (P.buildId or 0) + 1
-	local b = { id = P.buildId, type = btype, x = x, y = y, rot = rot }
-	if btype == "bed" then b.crop, b.grow, b.wet = false, 0, 0 end
-	if btype == "tree" then b.t = 60 end
-	table.insert(P.builds, b)
-	Farm.syncSolids()
-	G.stat(sess, "built_total")
-	if btype == "bed" then G.stat(sess, "built_bed") end
-	G.float("🔨 " .. d.name, b.x, b.y - 30, "#1b8a3a")
-	G.sfx(sess, "coin")
-	G.dirty(sess)
-end
-
-function Farm.remove(sess, x, y)
-	local P = sess.P
-	local b = Util.find(P.builds, function(q) return World.inRect(x, y, Stalls.rectOf(q), 6) end)
-	if not b then return G.toast(sess, "Здесь нет твоей постройки") end
-	if b.type == "stable5" then
-		local idx = table.find(Stalls.stables5(P), b) or 1
-		local from = 20 + (idx - 1) * 5
-		if Util.some(P.horses, function(h) return h.stall >= from and h.stall < from + 5 end) then
-			return G.toast(sess, "В этой конюшне живут лошади — сначала продай их или освободи денники", "warn")
-		end
-	end
-	Util.removeValue(P.builds, b)
-	local back = math.floor(B[b.type].price / 2)
-	P.money += back
-	Farm.syncSolids()
-	G.toast(sess, B[b.type].name .. " убрана, +" .. back .. " 💰")
-	G.sfx(sess, "tick")
-	G.dirty(sess)
-end
-
---[[ ================= огород ================= ]]
-function Farm.nearestBuild(sess, types, r)
-	local p = sess.p
-	local best, bd = nil, r or 60
-	for _, b in ipairs(sess.P.builds) do
-		if table.find(types, b.type) then
-			local rr = Stalls.rectOf(b)
-			local dx = math.max(rr.x - p.x, 0, p.x - rr.x - rr.w)
-			local dy = math.max(rr.y - p.y, 0, p.y - rr.y - rr.h)
-			local d = hypot(dx, dy)
-			if d < bd then bd = d; best = b end
-		end
-	end
-	return best
-end
-local function bedById(sess, id)
-	return Util.find(sess.P.builds, function(b) return b.id == id and b.type == "bed" end)
-end
-function Farm.plant(sess, id, crop)
-	local b = bedById(sess, id)
-	local c = Items.CROPS[crop]
-	local P = sess.P
-	if not b or not c or b.crop then return end
-	if not ((P.inv[c.seed] or 0) > 0) then return G.toast(sess, "Нет: " .. Items.name(c.seed) .. ". Купи в повозке «Корм и амуниция»", "warn") end
-	P.inv[c.seed] -= 1
-	b.crop, b.grow, b.wet = crop, 0, math.max(b.wet or 0, 0)
-	G.stat(sess, "planted")
-	G.sfx(sess, "tick")
-	buildsDirty = true
-	G.dirty(sess)
-end
-function Farm.water(sess, id)
-	local b = bedById(sess, id)
-	if not b then return end
-	b.wet = 90
-	G.float("💧", b.x, b.y - 20, "#1c7ed6")
-	G.sfx(sess, "tick")
-	buildsDirty = true
-	G.dirty(sess)
-end
-function Farm.harvest(sess, id)
-	local b = bedById(sess, id)
-	if not b or not b.crop or b.grow < 1 then return end
-	local c, P = Items.CROPS[b.crop], sess.P
-	local item, n = c.yield[1], c.yield[2]
-	P.inv[item] = (P.inv[item] or 0) + n
-	G.stat(sess, "harvest_total")
-	G.stat(sess, "harvest_" .. b.crop)
-	G.float(Items.icon(item) .. " +" .. n, b.x, b.y - 30, "#1b8a3a")
-	G.toast(sess, "🧺 Урожай: " .. Items.name(item) .. " ×" .. n, "good")
-	b.crop, b.grow = false, 0
-	G.sfx(sess, "coin")
-	buildsDirty = true
-	G.dirty(sess)
-end
-
-local growAcc = 0
-local function updateBuilds(dt)
-	growAcc += dt
-	if growAcc < 1 then return end
-	dt = growAcc
-	growAcc = 0
-	local raining = G.modules.Events.raining()
-	for _, s in ipairs(G.each()) do
-		local wells = Util.filter(s.P.builds, function(b) return b.type == "well" end)
-		for _, b in ipairs(s.P.builds) do
-			if b.type == "bed" and b.crop then
-				if raining or Util.some(wells, function(w) return hypot(w.x - b.x, w.y - b.y) < 240 end) then b.wet = math.max(b.wet, 60) end
-				if b.wet > 0 and b.grow < 1 then
-					local before = b.grow
-					b.grow = math.min(1, b.grow + dt / Items.CROPS[b.crop].time)
-					-- стадия роста поменялась — перерисовать
-					local function stage(g) return g >= 1 and 3 or g >= 0.6 and 2 or g >= 0.25 and 1 or 0 end
-					if stage(before) ~= stage(b.grow) then buildsDirty = true end
-				end
-				local wasWet = b.wet > 0
-				b.wet = math.max(0, b.wet - dt)
-				if wasWet ~= (b.wet > 0) then buildsDirty = true end
-			end
-			if b.type == "tree" then
-				local was = (b.t or 0) > 0
-				b.t = math.max(0, (b.t or 0) - dt)
-				if was ~= (b.t > 0) then buildsDirty = true end
-			end
-		end
-	end
 end
 
 --[[ ================= клады ================= ]]
@@ -304,10 +94,10 @@ function Farm.dig(sess)
 		elseif r < 0.58 then text = give(sess, "oldCoin", 1)
 		elseif r < 0.65 then text = give(sess, "spoon", 1)
 		elseif r < 0.71 then text = give(sess, "bell", 1)
-		elseif r < 0.78 then text = give(sess, Util.pick({ "seed_carrot", "seed_pumpkin", "seed_sunflower", "seed_oats" }), 3)
+		elseif r < 0.78 then text = give(sess, Util.pick({ "carrot", "pumpkin", "sunflower", "apple" }), 2)
 		elseif r < 0.85 then text = give(sess, Util.pick({ "dye_pink", "dye_blue", "dye_purple", "dye_mint" }), 1)
 		elseif r < 0.9 then text = give(sess, "brooch", 1)
-		elseif r < 0.94 then text = give(sess, "seed_magic", 1)
+		elseif r < 0.94 then text = give(sess, "pollen", 1)
 		elseif r < 0.98 or P.bigTreasure then text = give(sess, "goldShoe", 1)
 		else
 			local q = nil
@@ -393,67 +183,13 @@ function Farm.prompt(sess)
 	if not P.flags.chest_opened and hypot(p.x - World.CHEST.x, p.y - World.CHEST.y) < 90 then
 		return { label = "🧰 Открыть сундук", fn = function() openChest(sess) end }
 	end
-	local bed = Farm.nearestBuild(sess, { "bed" }, 40)
-	if bed then
-		local label = bed.crop and (bed.grow >= 1 and "🧺 Собрать урожай" or "🌱 Грядка") or "🌱 Посадить"
-		return { label = label, fn = function()
-			if bed.crop and bed.grow >= 1 then Farm.harvest(sess, bed.id) else G.open(sess, "bed", { id = bed.id }) end
-		end }
-	end
-	local tr = Farm.nearestBuild(sess, { "tree" }, 40)
-	if tr and (tr.t or 0) <= 0 then
-		return { label = "🍎 Собрать яблоки", fn = function()
-			tr.t = 180
-			give(sess, "apple", 3)
-			G.float("🍎 +3", tr.x, tr.y - 30, "#1b8a3a")
-			G.sfx(sess, "coin")
-			buildsDirty = true
-		end }
-	end
-	local hs = Farm.nearestBuild(sess, { "haystack" }, 40)
-	if hs and not hs.used then
-		return { label = "🌾 Взять сено", fn = function()
-			hs.used = true
-			give(sess, "hay", 5)
-			G.float("🌾 +5", hs.x, hs.y - 30, "#1b8a3a")
-			G.sfx(sess, "coin")
-			buildsDirty = true
-		end }
-	end
 	return nil
 end
 
 function Farm.update(dt)
-	updateBuilds(dt)
 	for _, s in ipairs(G.each()) do updateDetector(s, dt) end
 	updateShrooms(dt)
 end
 
 function Farm.canDig(sess) return canDig(sess) end
-function Farm.bunnyHomes()
-	local out = {}
-	for _, it in ipairs(allBuilds()) do
-		if it.b.type == "bunnyhouse" then table.insert(out, it.b) end
-	end
-	return out
-end
-
--- постройки для отрисовки у всех клиентов
-function Farm.takeBuildsDirty()
-	local d = buildsDirty
-	buildsDirty = false
-	return d
-end
-function Farm.buildsSnapshot()
-	local out = {}
-	for _, it in ipairs(allBuilds()) do
-		local b = it.b
-		table.insert(out, {
-			owner = it.sess.player.UserId, ownerName = G.playerName(it.sess), id = b.id, type = b.type, x = b.x, y = b.y, rot = b.rot or 0,
-			crop = b.crop or nil, grow = b.grow, wet = b.wet, t = b.t, used = b.used,
-		})
-	end
-	return out
-end
-
 return Farm

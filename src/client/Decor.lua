@@ -1,7 +1,7 @@
 --[[
 	Декорации мира на клиенте: деревья, грибы, камни, кактусы, кости, цветы, кристаллы, лианы
 	(списки детерминированно строит World — как в JS-версии). Рисуются кусками (чанками) вокруг камеры.
-	А также жители (NPC), сундук графа и постройки всех игроков.
+	А также жители (NPC) и сундук графа.
 ]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -9,8 +9,6 @@ local RunService = game:GetService("RunService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Util = require(Shared.Util)
 local World = require(Shared.World)
-local Items = require(Shared.Items)
-local Stalls = require(Shared.Stalls)
 local Q = require(Shared.QuestData)
 
 local Client = script.Parent
@@ -22,7 +20,7 @@ local CHUNK = 64          -- стадов
 local RADIUS = 250        -- стадов
 local color = Util.color
 local M = Enum.Material
-local folder, chunkFolder, buildFolder
+local folder, chunkFolder
 local chunks = {}         -- [key] = { items = {}, model = nil }
 local queue = {}
 local shroomParts = {}    -- [id] = part
@@ -354,154 +352,6 @@ local function buildChest()
 	chest = m
 end
 
---[[ ---------- постройки игроков ---------- ]]
-local builtModels = {}  -- [key] = { model, sig }
-local function stage(b)
-	if not b.crop then return -1 end
-	local g = b.grow or 0
-	return g >= 1 and 3 or g >= 0.6 and 2 or g >= 0.25 and 1 or 0
-end
-local function buildModel(b)
-	local m = Instance.new("Model")
-	m.Name = b.type
-	local r = Stalls.rectOf(b)
-	local cx, cz = (r.x + r.w / 2) * K, (r.y + r.h / 2) * K
-	local w, d = r.w * K, r.h * K
-	local base = CFrame.new(cx, 0, cz)
-	local t = b.type
-	local wood, dark = "#8a5a32", "#5c3d1e"
-	if t == "bed" then
-		P(m, Vector3.new(w, 0.5, d), base * CFrame.new(0, 0.25, 0), (b.wet or 0) > 0 and "#4a3524" or "#6b4a2b", M.Ground)
-		local st = stage(b)
-		if st >= 0 then
-			local c = Items.CROPS[b.crop]
-			local hgt = 0.4 + st * 0.5
-			for i = 0, 3 do
-				for j = 0, 1 do
-					local px = -w / 2 + w * (i + 0.5) / 4
-					local pz = -d / 2 + d * (j + 0.5) / 2
-					P(m, Vector3.new(0.3, hgt, 0.3), base * CFrame.new(px, 0.5 + hgt / 2, pz), c.leaf, M.Grass)
-					if st == 3 then
-						local fruit = b.crop == "magic" and M.Neon or M.SmoothPlastic
-						if b.crop == "pumpkin" then P(m, Vector3.new(1.2, 0.9, 1.2), base * CFrame.new(px, 0.9, pz), c.color, fruit)
-						else P(m, Vector3.new(0.6, 0.5, 0.6), base * CFrame.new(px, 0.5 + hgt + 0.2, pz), c.color, fruit) end
-					end
-				end
-			end
-		end
-	elseif t == "fence" then
-		local long = w >= d
-		local len = long and w or d
-		local dir = long and base or base * CFrame.Angles(0, math.pi / 2, 0)
-		for _, y in ipairs({ 1.4, 2.8 }) do P(m, Vector3.new(len, 0.35, 0.35), dir * CFrame.new(0, y, 0), wood, M.Wood, true) end
-		for _, s in ipairs({ -1, 0, 1 }) do P(m, Vector3.new(0.5, 3.2, 0.5), dir * CFrame.new(s * len / 2, 1.6, 0), dark, M.Wood, true) end
-	elseif t == "lamp" then
-		P(m, Vector3.new(0.5, 7, 0.5), base * CFrame.new(0, 3.5, 0), "#2b2b2b", M.Metal, true)
-		local bulb = P(m, Vector3.new(1.2, 1.2, 1.2), base * CFrame.new(0, 7.4, 0), "#ffe9a8")
-		bulb.Name = "LampBulb"
-		local l = Instance.new("PointLight")
-		l.Range = 34
-		l.Brightness = 2
-		l.Color = color("#ffd88a")
-		l.Parent = bulb
-	elseif t == "flowerbed" then
-		P(m, Vector3.new(w, 0.4, d), base * CFrame.new(0, 0.2, 0), "#6b4a2b", M.Ground)
-		local rnd = Util.rng(b.id * 13)
-		local cols = { "#ff8fab", "#ffd43b", "#c77dff", "#ffffff", "#ff6b6b" }
-		for _ = 1, 14 do
-			P(m, Vector3.new(0.45, 0.45, 0.45), base * CFrame.new((rnd() - 0.5) * (w - 0.6), 0.75, (rnd() - 0.5) * (d - 0.6)), cols[math.floor(rnd() * 5) + 1])
-		end
-	elseif t == "bench" then
-		P(m, Vector3.new(w, 0.3, d), base * CFrame.new(0, 1.3, 0), wood, M.Wood, true)
-		P(m, Vector3.new(w, 1.2, 0.3), base * CFrame.new(0, 2, -d / 2), wood, M.Wood, true)
-		for _, s in ipairs({ -1, 1 }) do P(m, Vector3.new(0.3, 1.2, d), base * CFrame.new(s * w * 0.42, 0.6, 0), dark, M.Wood, true) end
-	elseif t == "trough" then
-		P(m, Vector3.new(w, 1.4, d), base * CFrame.new(0, 0.7, 0), wood, M.Wood, true)
-		P(m, Vector3.new(w - 0.4, 0.2, d - 0.4), base * CFrame.new(0, 1.35, 0), "#4dabf7", M.Glass)
-	elseif t == "haystack" then
-		local h = b.used and 1.5 or 3.6
-		P(m, Vector3.new(w, h, d), base * CFrame.new(0, h / 2, 0), "#e9c46a", M.Grass, true)
-	elseif t == "tree" then
-		P(m, Vector3.new(0.8, 4, 0.8), base * CFrame.new(0, 2, 0), "#6b4423", M.Wood, true)
-		ball(m, 4.5, base * CFrame.new(0, 5.4, 0), "#4f8f3a", M.Grass)
-		if (b.t or 0) <= 0 then
-			for i = 1, 6 do
-				local a = i / 6 * math.pi * 2
-				ball(m, 0.6, base * CFrame.new(math.cos(a) * 1.9, 5 + (i % 2) * 0.8, math.sin(a) * 1.9), "#e03131")
-			end
-		end
-	elseif t == "bunnyhouse" then
-		P(m, Vector3.new(w, 2.4, d), base * CFrame.new(0, 1.2, 0), "#f1e3c6", M.SmoothPlastic, true)
-		P(m, Vector3.new(w + 0.6, 0.5, d + 0.6), base * CFrame.new(0, 2.7, 0), "#e64980", M.SmoothPlastic, true)
-		P(m, Vector3.new(0.9, 1.2, 0.2), base * CFrame.new(0, 0.6, d / 2), "#3b2a1a")
-	elseif t == "well" then
-		cyl(m, 2.6, w, base * CFrame.new(0, 1.3, 0), "#8d8476", M.Cobblestone, true)
-		P(m, Vector3.new(w + 0.6, 0.4, d + 0.6), base * CFrame.new(0, 5, 0), "#8c3b2a")
-		for _, s in ipairs({ -1, 1 }) do P(m, Vector3.new(0.3, 3.6, 0.3), base * CFrame.new(s * w / 2, 3.3, 0), dark) end
-	elseif t == "windmill" then
-		P(m, Vector3.new(w * 0.6, 12, d * 0.6), base * CFrame.new(0, 6, 0), "#f1e3c6", M.SmoothPlastic, true)
-		P(m, Vector3.new(w * 0.7, 2, d * 0.7), base * CFrame.new(0, 13, 0), "#a33a2a")
-		local hub = P(m, Vector3.new(0.8, 0.8, 0.8), base * CFrame.new(0, 11, d * 0.36), "#5c3d1e")
-		hub.Name = "Hub"
-		for i = 0, 3 do
-			local blade = P(m, Vector3.new(1.2, 7, 0.2), hub.CFrame * CFrame.Angles(0, 0, i * math.pi / 2) * CFrame.new(0, 3.5, 0.3), "#ffffff", M.Fabric)
-			blade.Name = "Blade"
-		end
-	elseif t == "stable5" then
-		for _, wr in ipairs(Stalls.stableWalls(b)) do
-			P(m, Vector3.new(wr.w * K, 8, wr.h * K), CFrame.new((wr.x + wr.w / 2) * K, 4, (wr.y + wr.h / 2) * K), "#c8a27a", M.WoodPlanks, true)
-		end
-		P(m, Vector3.new(w + 2, 0.6, d + 2), base * CFrame.new(0, 8.3, 0), "#a33a2a", M.WoodPlanks)
-		for k = 1, 4 do
-			if b.rot == 1 then P(m, Vector3.new(12, 4, 0.4), CFrame.new((r.x + 75) * K, 2, (r.y + k * 68) * K), wood, M.Wood, true)
-			else P(m, Vector3.new(0.4, 4, 12), CFrame.new((r.x + k * 68) * K, 2, (r.y + 70) * K), wood, M.Wood, true) end
-		end
-	end
-	return m
-end
-local function syncBuilds(list)
-	local seen = {}
-	for _, b in ipairs(list) do
-		local key = b.owner .. ":" .. b.id
-		seen[key] = true
-		local sig = table.concat({ b.type, b.x, b.y, b.rot, tostring(b.crop), stage(b), (b.wet or 0) > 0 and 1 or 0, (b.t or 0) > 0 and 1 or 0, b.used and 1 or 0 }, "|")
-		local cur = builtModels[key]
-		if not cur or cur.sig ~= sig then
-			if cur then cur.model:Destroy() end
-			local m = buildModel(b)
-			m:TranslateBy(Vector3.new(0, World.GROUND, 0))
-			m.Parent = buildFolder
-			if b.ownerName and (b.type == "stable5" or b.type == "windmill" or b.type == "bed") then
-				local anchor = m:FindFirstChildWhichIsA("BasePart")
-				if anchor then
-					local bb = Instance.new("BillboardGui")
-					bb.Size = UDim2.fromOffset(160, 20)
-					bb.StudsOffset = Vector3.new(0, 3, 0)
-					bb.MaxDistance = 60
-					bb.Parent = anchor
-					local tl = Instance.new("TextLabel")
-					tl.Size = UDim2.fromScale(1, 1)
-					tl.BackgroundTransparency = 1
-					tl.Text = (b.type == "bed" and b.crop and Items.CROPS[b.crop] and (Items.CROPS[b.crop].name .. " · ") or "") .. b.ownerName
-					tl.TextSize = 12
-					tl.Font = Enum.Font.Gotham
-					tl.TextColor3 = color("#3b2a1a")
-					tl.TextStrokeTransparency = 0.5
-					tl.TextStrokeColor3 = Color3.new(1, 1, 1)
-					tl.Parent = bb
-				end
-			end
-			builtModels[key] = { model = m, sig = sig }
-		end
-	end
-	for key, cur in pairs(builtModels) do
-		if not seen[key] then
-			cur.model:Destroy()
-			builtModels[key] = nil
-		end
-	end
-end
-
 function Decor.update(dt, t)
 	lastCheck += dt
 	if lastCheck > 0.5 then
@@ -509,32 +359,6 @@ function Decor.update(dt, t)
 		updateChunks()
 	end
 	processQueue()
-	-- мельницы крутятся, фонари горят ночью
-	local night = (game:GetService("Lighting").ClockTime < 6.2 or game:GetService("Lighting").ClockTime > 19.8)
-	for _, cur in pairs(builtModels) do
-		local m = cur.model
-		if m.Name == "windmill" then
-			local hub = m:FindFirstChild("Hub")
-			if hub then
-				local i = 0
-				for _, b in ipairs(m:GetChildren()) do
-					if b.Name == "Blade" then
-						b.CFrame = hub.CFrame * CFrame.Angles(0, 0, t * 0.8 + i * math.pi / 2) * CFrame.new(0, 3.5, 0.3)
-						i += 1
-					end
-				end
-			end
-		elseif m.Name == "lamp" then
-			local bulb = m:FindFirstChild("LampBulb")
-			if bulb then
-				local l = bulb:FindFirstChildOfClass("PointLight")
-				if l and l.Enabled ~= night then
-					l.Enabled = night
-					bulb.Material = night and M.Neon or M.SmoothPlastic
-				end
-			end
-		end
-	end
 end
 
 function Decor.init()
@@ -544,9 +368,6 @@ function Decor.init()
 	chunkFolder = Instance.new("Folder")
 	chunkFolder.Name = "Chunks"
 	chunkFolder.Parent = folder
-	buildFolder = Instance.new("Folder")
-	buildFolder.Name = "Builds"
-	buildFolder.Parent = folder
 	for _, t in ipairs(World.TREES) do addItem("tree", t, t.x, t.y) end
 	for _, f in ipairs(World.FLOWERS) do addItem("flower", f, f.x, f.y) end
 	for _, c in ipairs(World.CRYSTALS) do addItem("crystal", c, c.x, c.y) end
@@ -567,7 +388,6 @@ function Decor.init()
 			end
 		end
 	end)
-	State.on("builds", syncBuilds)
 	local t0 = os.clock()
 	RunService.Heartbeat:Connect(function(dt) Decor.update(dt, os.clock() - t0) end)
 end

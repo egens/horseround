@@ -62,7 +62,6 @@ task.spawn(function()
 	if workspace:GetAttribute("GroundY") == nil then workspace:SetAttribute("GroundY", World.GROUND) end
 	stage("жители", function() People.build(WorldBuild.root) end)
 	stage("табуны", Herds.spawnAll)
-	stage("ИИ-игроки", Specials.AI.init)
 	stage("олени и привидения", Specials.Creatures.init)
 	if not ok then warn("[HorseFarm] мир построен с ошибками — смотри сообщения выше") end
 	worldReady = true
@@ -119,10 +118,14 @@ local function onPlayerAdded(player)
 	G.sessions[player] = sess
 	Market.setup(sess)
 	sess.ready = true
-	Farm.syncSolids()
 	player.CharacterAdded:Connect(function(char) onCharacter(sess, char) end)
 	if player.Character then task.spawn(onCharacter, sess, player.Character) end
 	if worldReady and not player.Character then player:LoadCharacter() end
+	if P._migrated then
+		local m = P._migrated
+		task.delay(10, function() G.toast(sess, "🔨 Стройку и огород убрали из игры. Возвращено " .. m.refund .. " 💰" .. (m.moved > 0 and (", лошади из маленьких конюшен переехали в свободные денники (" .. m.moved .. ")") or "") .. ".", "good") end)
+		P._migrated = nil
+	end
 	if not ok then
 		G.toast(sess, "⚠️ Не получилось загрузить сохранение — играем без него. Прогресс сейчас не сохранится.", "warn")
 	end
@@ -160,7 +163,6 @@ local function onPlayerRemoving(player)
 	sess.ready = false
 	G.sessions[player] = nil
 	saveSession(sess)
-	Farm.syncSolids()
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
@@ -187,9 +189,6 @@ G.R.Query.OnServerInvoke = function(player, what, arg)
 		local rows = {}
 		for _, s in ipairs(G.each()) do
 			table.insert(rows, { name = G.playerName(s), caught = s.P.stats.caught or 0, money = s.P.money, where = World.REGION_NAMES[World.regionAt(s.p.x, s.p.y)] or "", me = s == sess, human = true })
-		end
-		for _, b in ipairs(Specials.AI.hud()) do
-			table.insert(rows, { name = b.name, caught = b.caught, money = b.money, where = b.where, me = false, human = false })
 		end
 		table.sort(rows, function(x, y) return x.caught > y.caught end)
 		return { rows = rows, train = Specials.Train.hud(), holiday = Specials.Holidays.hud() }
@@ -290,7 +289,6 @@ RunService.Heartbeat:Connect(function(dt)
 	Specials.Creatures.update(dt)
 	Specials.Train.update(dt)
 	Specials.Holidays.update(dt)
-	Specials.AI.update(dt)
 	-- розовый дракон в радужный дождь
 	local raining = Events.raining()
 	if raining and not G.wasRaining and math.random() < 0.35 then Herds.pinkDragonRain() end
@@ -317,7 +315,6 @@ RunService.Heartbeat:Connect(function(dt)
 		local ws = worldState()
 		G.R.WorldState:FireAllClients(ws)
 		if Farm.takePickedDirty() then G.R.WorldState:FireAllClients({ picked = Farm.pickedList() }) end
-		if Farm.takeBuildsDirty() then G.R.Builds:FireAllClients(Farm.buildsSnapshot()) end
 	end
 	if acc.slow >= 2 then
 		acc.slow = 0
@@ -329,12 +326,11 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- новый клиент: прислать постройки и грибы
+-- новый клиент: прислать грибы и профиль
 G.R.Act.OnServerEvent:Connect(function(player, name)
 	if name == "hello" then
 		local sess = G.sessions[player]
 		if not sess then return end
-		G.R.Builds:FireClient(player, Farm.buildsSnapshot())
 		G.R.WorldState:FireClient(player, { picked = Farm.pickedList() })
 		sendProfile(sess)
 		sess.hudCache = ""

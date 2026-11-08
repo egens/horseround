@@ -11,6 +11,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Util = require(Shared.Util)
 local World = require(Shared.World)
 local Items = require(Shared.Items)
+local Q = require(Shared.QuestData)
 
 local Client = script.Parent.Parent
 local State = require(Client.State)
@@ -94,7 +95,7 @@ function Hud.build()
 	hudButton(right, "🐴 Лошади", function() Hud.windows.open("stable", { can = State.hud and State.hud.atFarm }) end)
 	el.quests = hudButton(right, "📜", W("quests"))
 	hudButton(right, "👥", W("players"))
-	hudButton(right, "🔨", W("build"))
+	hudButton(right, "🗺️", function() Hud.toggleMap() end)
 	el.detector = hudButton(right, "📡", function() State.act("detector") end)
 	hudButton(right, "🎒", W("inventory"))
 	hudButton(right, "❓", W("help"))
@@ -166,10 +167,11 @@ function Hud.build()
 	hlist(actions, Enum.HorizontalAlignment.Center, 10)
 	el.birth = Kit.button(actions, "🍼 Родить жеребёнка", function() State.act("birth") end, { big = true, color = "pink" })
 	el.lift = Kit.button(actions, "⤴ Ноги выше!", function() Hud.onLift() end, { big = true, color = "orange" })
-	el.lasso = Kit.button(actions, "🤠 Бросить лассо", function() State.act("lasso") end, { big = true, color = "orange" })
+	el.lasso = Kit.button(actions, "🤠 Бросить лассо [F]", function() State.act("lasso") end, { big = true, color = "orange" })
 	el.prompt = Kit.button(actions, "", function() State.act("interact") end, { big = true, color = "green" })
-	-- миникарта
+	-- миникарта и большая карта
 	Hud.buildMinimap()
+	Hud.buildBigMap()
 end
 
 function Hud.onLift()
@@ -261,6 +263,156 @@ local function updateMinimap()
 	if bt then mm.treasure.Position = mmPos(bt.x, bt.y) end
 end
 
+--[[ ---------- большая карта (M) ---------- ]]
+local bm = {}
+local BM_COLS, BM_ROWS = 132, 96
+local function bmPos(x, y)
+	return UDim2.fromScale(math.clamp(x / World.W, 0, 1), math.clamp(math.min(y, World.H) / World.H, 0, 1))
+end
+local function bmLabel(parent, text, x, y, size, col, z)
+	local t = make("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = bmPos(x, y), Size = UDim2.fromOffset(0, 0), AutomaticSize = Enum.AutomaticSize.XY,
+		BackgroundTransparency = 1, Text = text, Font = Kit.BOLD, TextSize = size or 13, TextColor3 = col or C.white,
+		TextStrokeTransparency = 0.3, ZIndex = z or 34, Parent = parent,
+	})
+	return t
+end
+function Hud.buildBigMap()
+	local shade = make("TextButton", { Name = "BigMap", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45,
+		Text = "", AutoButtonColor = false, Visible = false, ZIndex = 30, Parent = gui })
+	shade.Activated:Connect(function() Hud.toggleMap(false) end)
+	bm.shade = shade
+	local frame = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.52), Size = UDim2.fromScale(0.94, 0.84),
+		BackgroundColor3 = color("#3f8fc0"), ClipsDescendants = true, ZIndex = 31, Parent = shade })
+	make("UIAspectRatioConstraint", { AspectRatio = World.W / World.H, Parent = frame })
+	Kit.corner(frame, 12)
+	Kit.stroke(frame, C.panel, 3)
+	bm.frame = frame
+	-- суша по биомам: одинаковые клетки подряд в строке склеиваем в одну полоску
+	local sums = {}
+	for j = 0, BM_ROWS - 1 do
+		local runStart, runReg = 0, nil
+		local function flush(i)
+			if runReg and runReg ~= "sea" then
+				make("Frame", { Position = UDim2.fromScale(runStart / BM_COLS, j / BM_ROWS), Size = UDim2.new((i - runStart) / BM_COLS, 1, 1 / BM_ROWS, 1),
+					BackgroundColor3 = color(REGION_COLORS[runReg] or "#9ccb6c"), BorderSizePixel = 0, ZIndex = 32, Parent = frame })
+			end
+		end
+		for i = 0, BM_COLS - 1 do
+			local x, y = (i + 0.5) / BM_COLS * World.W, (j + 0.5) / BM_ROWS * World.H
+			local reg = World.regionAt(x, y)
+			if World.lakeAt(x, y) then reg = "sea" end
+			if reg ~= "sea" then
+				local sm = sums[reg] or { x = 0, y = 0, n = 0 }
+				sm.x += x; sm.y += y; sm.n += 1
+				sums[reg] = sm
+			end
+			if reg ~= runReg then
+				flush(i)
+				runStart, runReg = i, reg
+			end
+		end
+		flush(BM_COLS)
+	end
+	-- названия краёв — в середине их клеток
+	for reg, sm in pairs(sums) do
+		local name = World.REGION_NAMES[reg]
+		if name and sm.n >= 12 and reg ~= "grottocave" then
+			bmLabel(frame, name, sm.x / sm.n, sm.y / sm.n, 14, C.white, 33)
+		end
+	end
+	-- важные места
+	local function place(icon, name, x, y)
+		bmLabel(frame, icon .. " " .. name, x, y, 12, color("#fff3bf"), 34)
+	end
+	local S, Mk, St = World.STABLE, World.MARKET, World.STATION
+	place("🏠", "Конюшня", S.x + S.w / 2, S.y + S.h / 2)
+	place("🎪", "Рынок", Mk.x + Mk.w / 2, Mk.y + Mk.h / 2)
+	place("🚂", "Станция", St.x + St.w / 2, St.y)
+	place("⛵", World.PIER.name or "Пристань", World.PIER.x, World.PIER.y)
+	place("🌀", "Портал", World.PORTAL.x, World.PORTAL.y)
+	place("🏁", "Скачки", World.START.x, World.START.y)
+	for _, I in ipairs(World.ISLANDS) do place("⛵", "", I.pier.x, I.pier.y) end
+	for _, n in ipairs(Q.NPCS) do
+		local d = make("TextLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Position = bmPos(n.x, n.y), Size = UDim2.fromOffset(16, 16), BackgroundTransparency = 1,
+			Text = "💬", TextSize = 13, ZIndex = 34, Parent = frame })
+		bm.npc = bm.npc or {}
+		bm.npc[n.id] = d
+	end
+	-- живые отметки
+	local function dot(c, sz, z)
+		local d = make("Frame", { Size = UDim2.fromOffset(sz, sz), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = color(c), BorderSizePixel = 0, ZIndex = z or 35, Parent = frame })
+		Kit.corner(d, sz)
+		return d
+	end
+	bm.dot = dot
+	bm.me = make("TextLabel", { Size = UDim2.fromOffset(26, 26), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, Text = "▲",
+		TextColor3 = color("#e64980"), TextStrokeColor3 = C.white, TextStrokeTransparency = 0, Font = Kit.BOLD, TextSize = 24, ZIndex = 38, Parent = frame })
+	bm.others, bm.herds = {}, {}
+	bm.shoe = bmLabel(frame, "🧲", 0, 0, 14, C.white, 36)
+	bm.treasure = bmLabel(frame, "✖", 0, 0, 20, C.red, 36)
+	bm.train = bmLabel(frame, "🚂", 0, 0, 18, C.white, 36)
+	-- заголовок и подсказка
+	local top = make("TextLabel", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 6), Size = UDim2.new(1, -20, 0, 26), BackgroundTransparency = 1,
+		Text = "🗺️ Карта мира — M или клик, чтобы закрыть", Font = Kit.BOLD, TextSize = 18, TextColor3 = C.white, TextStrokeTransparency = 0.2, ZIndex = 39, Parent = frame })
+	bm.title = top
+	local legend = make("TextLabel", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, -6), Size = UDim2.new(1, -16, 0, 20), BackgroundTransparency = 1,
+		Text = "▲ ты   ⚪ игроки   🟤 табуны   💬 жители   ✖ клад", Font = Kit.BOLD, TextSize = 14, TextColor3 = C.white, TextStrokeTransparency = 0.2,
+		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 39, Parent = frame })
+	bm.legend = legend
+end
+local function updateBigMap()
+	local ch = player.Character
+	local r = ch and ch:FindFirstChild("HumanoidRootPart")
+	if r then
+		local x, y = World.fromStuds(r.Position)
+		bm.me.Position = bmPos(x, y)
+		local lv = r.CFrame.LookVector
+		bm.me.Rotation = math.deg(math.atan2(lv.X, -lv.Z))
+		bm.title.Text = (y > World.H and "☁️ Ты на небесных островах · " or "🗺️ ") .. "Карта мира — M или клик, чтобы закрыть"
+	end
+	local ws = State.world
+	local seen = {}
+	for _, p in ipairs(ws.players or {}) do
+		if p.id ~= player.UserId then
+			local o = bm.others[p.id]
+			if not o then
+				o = { d = bm.dot("#ffffff", 10, 37) }
+				Kit.stroke(o.d, color("#333333"), 1)
+				o.l = bmLabel(bm.frame, "", 0, 0, 12, C.white, 37)
+				bm.others[p.id] = o
+			end
+			o.d.Position = bmPos(p.x, p.y)
+			o.l.Position = bmPos(p.x, p.y) + UDim2.fromOffset(0, -13)
+			o.l.Text = p.name or ""
+			seen[p.id] = true
+		end
+	end
+	for id, o in pairs(bm.others) do
+		if not seen[id] then o.d:Destroy(); o.l:Destroy(); bm.others[id] = nil end
+	end
+	for k, hpos in pairs(ws.herds or {}) do
+		local d = bm.herds[k] or bm.dot("#7a4a22", 8, 35)
+		bm.herds[k] = d
+		d.Position = bmPos(hpos[1], hpos[2])
+		d.Visible = hpos[2] <= World.H
+	end
+	bm.shoe.Visible = ws.shoe ~= nil
+	if ws.shoe then bm.shoe.Position = bmPos(ws.shoe.x, ws.shoe.y) end
+	local bt = State.hud and State.hud.bigTreasure
+	bm.treasure.Visible = bt ~= nil
+	if bt then bm.treasure.Position = bmPos(bt.x, bt.y) end
+	bm.train.Visible = ws.train ~= nil
+	if ws.train then bm.train.Position = bmPos(ws.train.x, World.RAIL.y) end
+end
+function Hud.toggleMap(on)
+	if not bm.shade then return end
+	if on == nil then on = not bm.shade.Visible end
+	bm.shade.Visible = on
+	if on then updateBigMap() end
+end
+function Hud.mapOpen() return bm.shade ~= nil and bm.shade.Visible end
+
 --[[ ---------- обновление ---------- ]]
 local function show(o, on) o.Visible = on and true or false end
 function Hud.update(d)
@@ -338,6 +490,7 @@ function Hud.init()
 	State.on("hud", Hud.update)
 	RunService.Heartbeat:Connect(function()
 		if mm.frame then updateMinimap() end
+		if bm.shade and bm.shade.Visible then updateBigMap() end
 	end)
 	GuiService.MenuOpened:Connect(function() end)
 end

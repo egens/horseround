@@ -79,11 +79,6 @@ end
 local BUNNY_COLORS = { { "#b08d6a", "#e9dcc8" }, { "#8a7f75", "#d9d2ca" }, { "#f1ede6", "#ffffff" }, { "#5e4b3c", "#cbb9a4" } }
 local function spawnBunnies(n)
 	local areas = { World.FIELD, { x = World.OX + 1000, y = World.OY + 1150, w = 650, h = 1150 }, World.LAKELAND, World.FOREST[1], World.FARMLAND, World.STEPPE }
-	for _, hh in ipairs(G.modules.Farm.bunnyHomes()) do
-		local a = { x = hh.x - 250, y = hh.y - 250, w = 500, h = 500 }
-		table.insert(areas, a)
-		table.insert(areas, a)
-	end
 	for _ = 1, n do
 		local p = randomGrass(pick(areas), 60)
 		if p then

@@ -14,7 +14,6 @@ local Riding = {}
 local G, Herds
 local clamp, hypot = Util.clamp, Util.hypot
 local K = World.K
-local WALK_SPEED = 140 -- пикселей в секунду пешком
 local SADDLE_H = 14 * 0.45 -- высота седла в стадах (у лошади размера 1)
 
 function Riding.init(g, herds) G, Herds = g, herds end
@@ -42,9 +41,12 @@ function Riding.setupCharacter(sess, char)
 	local hum = char:WaitForChild("Humanoid", 10)
 	if not hum then return end
 	sess.baseHip = hum.HipHeight
+	-- пешком скорость и прыжок задаёт клиент (Shift — бег, Пробел — прыжок), верхом — атрибуты RideSpeed/RideJump
 	hum.UseJumpPower = false
-	hum.JumpHeight = 0
-	hum.WalkSpeed = WALK_SPEED * K
+	hum.JumpHeight = 7.2
+	hum.WalkSpeed = 16
+	char:SetAttribute("RideSpeed", 0)
+	char:SetAttribute("RideJump", 0)
 	char:SetAttribute("Gait", 0)
 	char:SetAttribute("Flying", false)
 	-- рубашка и шлем
@@ -117,28 +119,19 @@ function Riding.applyHip(sess)
 	end
 end
 
+-- скорость верхом: сервер считает по аллюру, а клиент ставит её персонажу (атрибуты RideSpeed/RideJump)
 function Riding.applySpeed(sess)
-	local hum = G.humanoid(sess)
-	if not hum then return end
+	local char = sess.player.Character
 	local m = G.mounted(sess)
 	local p = sess.p
-	local v
-	if m then
-		if m.act then
-			v = 0
-		else
-			v = Riding.gaitSpeed(m, p.gait) * (p.fly and 1.3 or 1)
-		end
-	else
-		v = WALK_SPEED
-	end
+	local v = 0
+	if m and not m.act then v = Riding.gaitSpeed(m, p.gait) * (p.fly and 1.3 or 1) end
 	if sess.race and sess.race.state == "countdown" then v = 0 end
-	local want = v * K
-	if math.abs(hum.WalkSpeed - want) > 0.01 then hum.WalkSpeed = want end
-	local jh = (sess.ex and sess.ex.type == "jump") and 4 or 0
-	if hum.JumpHeight ~= jh then hum.JumpHeight = jh end
-	local char = sess.player.Character
+	local want = math.floor(v * K * 100 + 0.5) / 100
+	local jh = (m and sess.ex and sess.ex.type == "jump") and 4 or 0
 	if char then
+		if char:GetAttribute("RideSpeed") ~= want then char:SetAttribute("RideSpeed", want) end
+		if char:GetAttribute("RideJump") ~= jh then char:SetAttribute("RideJump", jh) end
 		if char:GetAttribute("Gait") ~= p.gait then char:SetAttribute("Gait", p.gait) end
 		if char:GetAttribute("Flying") ~= (p.fly or false) then char:SetAttribute("Flying", p.fly or false) end
 	end

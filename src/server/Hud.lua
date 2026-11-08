@@ -37,7 +37,7 @@ function Hud.computePrompt(sess)
 	if Stalls.islandStableHere(p.x, p.y) then return { label = "🐴 Мои лошади", fn = function() G.open(sess, "stable", { can = true }) end } end
 	local ep = M.Events.prompt(sess)
 	if ep then return ep end
-	if World.inRect(p.x, p.y, World.STABLE, 30) or World.inRect(p.x, p.y, World.PADDOCK, 30) or Stalls.nearSmallStable(P, p.x, p.y) then
+	if World.inRect(p.x, p.y, World.STABLE, 30) or World.inRect(p.x, p.y, World.PADDOCK, 30) then
 		return { label = "🐴 Мои лошади", fn = function() G.open(sess, "stable", { can = true }) end }
 	end
 	if near(p, World.SELL) then return { label = "💰 Продать лошадь", fn = function() G.open(sess, "sell", { fair = M.Events.fair() }) end } end
@@ -57,7 +57,7 @@ function Hud.hint(sess)
 	local M = G.modules
 	local p, P = sess.p, sess.P
 	local tk = P.tack
-	if #P.horses == 0 and not sess.led then return "Иди в поле на восток от фермы и поймай лошадь лассо (Пробел). Спокойных лошадей ловить легче!" end
+	if #P.horses == 0 and not sess.led then return "Иди в поле на восток от фермы и поймай лошадь лассо (клавиша F или клик по лошади). Спокойных лошадей ловить легче!" end
 	if sess.led then return "Веди лошадь по кличке " .. sess.led.name .. " в конюшню — она пойдёт за тобой" end
 	if not tk.saddle or not tk.bridle then return "Купи седло и уздечку в повозке «Корм и амуниция», чтобы ездить верхом" end
 	local m = G.mounted(sess)
@@ -88,7 +88,7 @@ function Hud.hint(sess)
 	if reg == "i4" then return "Костяной остров: лошади с черепами и рёбрами, а вокруг — огромные кости" end
 	if G.isNight() then return "Ночь: табуны спят — подкрасться к лошадям легче. Фонари освещают ферму" end
 	if #Q.journal(P) == 0 then return "Поговори с жителями (💬) — у них есть задания. Список заданий — кнопка 📜" end
-	return "Аллюры: 1 — шаг, 2 — рысь, 3 — галоп. Задания — кнопка 📜, стройка — 🔨"
+	return "Аллюры: 1 — шаг, 2 — рысь, 3 — галоп. Задания — кнопка 📜, карта — M"
 end
 
 function Hud.build(sess)

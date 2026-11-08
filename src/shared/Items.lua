@@ -1,6 +1,6 @@
 --[[
 	Каталоги (перенос js/items.js и части js/game.js): вещи в рюкзаке, корм, амуниция,
-	семена и урожай, постройки, причёски и краски, тесты выездки, действия лошадей.
+	урожай, причёски и краски, тесты выездки, действия лошадей.
 ]]
 local Items = {}
 
@@ -16,12 +16,6 @@ Items.ITEMS = {
 	pollen = { name = "Волшебная пыльца", icon = "✨", sell = 40 },
 	mushroom = { name = "Гриб", icon = "🍄", sell = 6 },
 	glowshroom = { name = "Светящийся гриб", icon = "🔮", sell = 15 },
-	seed_carrot = { name = "Семена моркови", icon = "🌱", sell = 0 },
-	seed_oats = { name = "Семена овса", icon = "🌱", sell = 0 },
-	seed_hay = { name = "Семена травы", icon = "🌱", sell = 0 },
-	seed_pumpkin = { name = "Семена тыквы", icon = "🌱", sell = 0 },
-	seed_sunflower = { name = "Семена подсолнуха", icon = "🌱", sell = 0 },
-	seed_magic = { name = "Волшебное семечко", icon = "💫", sell = 0 },
 	oldShoe = { name = "Старая подкова", icon = "🧲", sell = 20 },
 	oldCoin = { name = "Старинная монета", icon = "💰", sell = 40 },
 	spoon = { name = "Серебряная ложка", icon = "🥄", sell = 30 },
@@ -40,7 +34,7 @@ Items.ITEMS = {
 	dye_rainbow = { name = "Радужная краска для гривы", icon = "🌈", sell = 0 },
 }
 Items.ITEM_ORDER = { "hay", "oats", "carrot", "apple", "sugar", "milk", "pumpkin", "sunflower", "pollen", "mushroom", "glowshroom",
-	"seed_carrot", "seed_oats", "seed_hay", "seed_pumpkin", "seed_sunflower", "seed_magic", "horseshoes",
+	"horseshoes",
 	"oldShoe", "oldCoin", "spoon", "brooch", "bell", "goldShoe", "crown", "map",
 	"dye_pink", "dye_blue", "dye_purple", "dye_mint", "dye_gold", "dye_rainbow" }
 
@@ -64,37 +58,9 @@ Items.TACK = {
 	pad = { name = "Вальтрап", icon = "🟥", price = 30, desc = "Цветная подкладка под седло", colors = true },
 	helmet = { name = "Шлем", icon = "⛑️", price = 40, desc = "Безопасность прежде всего!", colors = true },
 	boots = { name = "Ногавки", icon = "🧦", price = 35, desc = "Защищают ноги лошади", colors = true },
-	detector = { name = "Металлоискатель", icon = "📡", price = 150, desc = "Пищит рядом с кладом. Включай клавишей M" },
+	detector = { name = "Металлоискатель", icon = "📡", price = 150, desc = "Пищит рядом с кладом. Включай клавишей G" },
 }
 Items.TACK_ORDER = { "saddle", "bridle", "brush", "goodLasso", "pad", "helmet", "boots", "detector" }
-
--- грядки: что сажаем, сколько растёт (секунды игры), что собираем
-Items.CROPS = {
-	carrot = { name = "Морковь", seed = "seed_carrot", time = 110, yield = { "carrot", 4 }, color = "#f76707", leaf = "#5c940d", seedPrice = 4 },
-	oats = { name = "Овёс", seed = "seed_oats", time = 140, yield = { "oats", 4 }, color = "#e0c068", leaf = "#94a83a", seedPrice = 5 },
-	hay = { name = "Луговая трава", seed = "seed_hay", time = 90, yield = { "hay", 5 }, color = "#8fbf4f", leaf = "#6b9a35", seedPrice = 3 },
-	pumpkin = { name = "Тыква", seed = "seed_pumpkin", time = 200, yield = { "pumpkin", 1 }, color = "#f08c00", leaf = "#2f9e44", seedPrice = 10 },
-	sunflower = { name = "Подсолнух", seed = "seed_sunflower", time = 160, yield = { "sunflower", 1 }, color = "#ffd43b", leaf = "#2b8a3e", seedPrice = 7 },
-	magic = { name = "Волшебный цветок", seed = "seed_magic", time = 240, yield = { "pollen", 2 }, color = "#e599f7", leaf = "#3bc9db", seedPrice = 0 },
-}
-Items.CROP_ORDER = { "carrot", "oats", "hay", "pumpkin", "sunflower", "magic" }
-
--- постройки: размер в пикселях карты (1 px = 0.1 стада), цена, твёрдая ли
-Items.BUILDS = {
-	bed = { name = "Грядка", icon = "🟫", price = 20, w = 80, h = 44, solid = false, desc = "Сажай морковь, овёс, тыквы" },
-	fence = { name = "Забор", icon = "🧱", price = 8, w = 90, h = 10, solid = true, desc = "Секция деревянного забора" },
-	lamp = { name = "Фонарь", icon = "🏮", price = 35, w = 16, h = 16, solid = true, desc = "Светит ночью" },
-	flowerbed = { name = "Клумба", icon = "🌷", price = 15, w = 60, h = 40, solid = false, desc = "Красиво!" },
-	bench = { name = "Скамейка", icon = "🛋️", price = 25, w = 70, h = 24, solid = true, desc = "Отдохнуть после скачек" },
-	trough = { name = "Поилка", icon = "🚰", price = 35, w = 80, h = 28, solid = true, desc = "Лошади в леваде рядом веселее" },
-	haystack = { name = "Стог сена", icon = "🌾", price = 20, w = 50, h = 50, solid = true, desc = "Даёт 5 сена" },
-	tree = { name = "Яблонька", icon = "🌳", price = 30, w = 30, h = 30, solid = true, desc = "Раз в 3 минуты дарит яблоки" },
-	bunnyhouse = { name = "Домик для зайчиков", icon = "🐰", price = 60, w = 50, h = 40, solid = true, desc = "Зайчики приходят чаще" },
-	well = { name = "Колодец", icon = "⛲", price = 80, w = 50, h = 50, solid = true, desc = "Грядки рядом поливаются сами" },
-	windmill = { name = "Мельница", icon = "🌬️", price = 250, w = 110, h = 110, solid = true, desc = "Большая и красивая" },
-	stable5 = { name = "Маленькая конюшня", icon = "🏠", price = 400, w = 340, h = 150, solid = false, desc = "+5 денников для лошадей" },
-}
-Items.BUILD_ORDER = { "bed", "fence", "lamp", "flowerbed", "bench", "trough", "haystack", "tree", "bunnyhouse", "well", "windmill", "stable5" }
 
 Items.MANE_STYLES = {
 	normal = { name = "Обычная", icon = "🐴" },
