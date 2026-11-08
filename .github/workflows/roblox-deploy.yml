@@ -1,4 +1,4 @@
-# Автодеплой версии для Roblox: собирает roblox/ через Rojo и публикует место через Open Cloud.
+# Автодеплой в Roblox: собирает проект через Rojo и публикует место через Open Cloud.
 # Нужны секреты репозитория: ROBLOX_API_KEY (доступ universe-places: write),
 # ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID. Без них сборка проверяется, но публикация пропускается.
 name: Деплой в Roblox
@@ -7,7 +7,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "roblox/**"
+      - "src/**"
+      - "default.project.json"
       - ".github/workflows/roblox-deploy.yml"
   workflow_dispatch:
     inputs:
@@ -41,7 +42,6 @@ jobs:
           echo "$HOME/.rojo" >> "$GITHUB_PATH"
 
       - name: Собрать место
-        working-directory: roblox
         run: |
           rojo --version
           rojo build default.project.json -o HorseFarm.rbxl
@@ -53,7 +53,6 @@ jobs:
           UNIVERSE_ID: ${{ secrets.ROBLOX_UNIVERSE_ID }}
           PLACE_ID: ${{ secrets.ROBLOX_PLACE_ID }}
           VERSION_TYPE: ${{ inputs.versionType || 'Published' }}
-        working-directory: roblox
         run: |
           if [ -z "$API_KEY" ] || [ -z "$UNIVERSE_ID" ] || [ -z "$PLACE_ID" ]; then
             echo "::warning::Секреты ROBLOX_* не заданы — публикация пропущена (сборка прошла)."
