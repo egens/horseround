@@ -183,7 +183,7 @@ src/shared   — общий код: Util, Genetics, Horses, Items, World, Stalls
 src/server   — Main (цикл), Core, Profiles (DataStore), Entities (репликация), Herds, Owned,
                Riding, Exercises, Events (+скачки), Farm (клады, грибы), Market, Quests,
                Specials (поезд, праздники, существа), Actions, Hud, WorldBuild (рельеф и постройки)
-src/client   — Main, State, Render (существа), HorseBuilder, Decor (деревья по чанкам, жители), Effects, Controls, Sound, UI/{Kit, Hud, Windows, Minigames}
+src/client   — Main, State, Render (существа), HorseBuilder, Decor (деревья по чанкам, жители), Glow (приглушает свечение), Effects, Controls, Sound, UI/{Kit, Hud, Windows, Minigames}
 ```
 
 ## Отличия от JS-версии
