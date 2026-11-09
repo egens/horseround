@@ -14,6 +14,7 @@ local Net = require(Shared.Net)
 
 local Client = script.Parent
 local State = require(Client.State)
+local Sound = require(Client.Sound)
 
 local Effects = {}
 local K = World.K
@@ -89,6 +90,7 @@ local function updateLight(dt)
 	cc.Saturation = reg == "tundra" and -0.1 or 0.05
 	atmosphere.Density = inCave and 0.45 or (reg == "deepforest" or reg == "foxwood") and 0.4 or 0.28
 	Effects.region = reg
+	Sound.region = reg
 end
 
 --[[ ---------- дождь, снег, праздники ---------- ]]
@@ -253,6 +255,15 @@ local function updatePuddles(dt)
 			table.insert(puddles, p)
 		end
 	end
+end
+
+-- лошадь наступила в лужу? (для звука шлёпанья)
+Sound.nearPuddle = function(pos)
+	for _, p in ipairs(puddles) do
+		local d = Vector3.new(p.Position.X - pos.X, 0, p.Position.Z - pos.Z).Magnitude
+		if d < p.Size.Y * 0.5 + 1.5 then return true end
+	end
+	return false
 end
 
 --[[ ---------- летящие надписи ---------- ]]

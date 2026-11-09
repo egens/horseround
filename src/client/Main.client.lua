@@ -42,16 +42,23 @@ Controls.init(Windows, Minigames, Hud)
 
 Net.get("Toast").OnClientEvent:Connect(Hud.toast)
 State.on("toast", Hud.toast)
+Sound.init()
 Net.get("Sfx").OnClientEvent:Connect(function(name, a, b)
-	if name == "neigh" and a and b then
-		-- ржание слышно только рядом
-		local ch = game:GetService("Players").LocalPlayer.Character
-		local r = ch and ch:FindFirstChild("HumanoidRootPart")
-		local World = require(Shared.World)
-		if r then
-			local x, y = World.fromStuds(r.Position)
-			if math.sqrt((x - a) ^ 2 + (y - b) ^ 2) > 600 then return end
+	if name == "neigh" then
+		-- ржание слышно только рядом, и чем дальше — тем тише
+		local vol = 1
+		if a and b then
+			local ch = game:GetService("Players").LocalPlayer.Character
+			local r = ch and ch:FindFirstChild("HumanoidRootPart")
+			if r then
+				local x, y = World.fromStuds(r.Position)
+				local d = math.sqrt((x - a) ^ 2 + (y - b) ^ 2)
+				if d > 600 then return end
+				vol = math.clamp(1 - d / 700, 0.25, 1)
+			end
 		end
+		Sound.play("neigh", nil, vol)
+		return
 	end
 	if name == "boo" then
 		-- привидение пролетело сквозь тебя — лёгкий толчок

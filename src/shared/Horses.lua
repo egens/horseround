@@ -409,6 +409,16 @@ function Horses.price(h)
 	return math.max(20, math.floor(p / 5 + 0.5) * 5)
 end
 
+-- цена скрещивания (ветеринар): для обычных лошадей 30 монет, для дорогих и волшебных — больше.
+-- Растёт со средней ценой родителей, за каждого волшебного родителя ещё +150.
+function Horses.breedCost(m, f)
+	local avg = (Horses.price(m) + Horses.price(f)) / 2
+	local c = 30 + math.max(0, avg - 300) * 0.3
+	if Horses.isMagic(m) then c += 150 end
+	if Horses.isMagic(f) then c += 150 end
+	return math.floor(c / 10 + 0.5) * 10
+end
+
 -- глагол в нужном роде: v(h, 'устала', 'устал')
 function Horses.v(h, fem, masc)
 	return h.sex == "f" and fem or masc

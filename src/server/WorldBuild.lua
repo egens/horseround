@@ -126,12 +126,20 @@ local function buildTerrain()
 			yieldSome()
 		end
 	end
+	-- Вода в Roblox (с «береговой линией») может жить в одной клетке вместе с землёй: если залить
+	-- воду поверх земли или землю поверх воды, вода остаётся сверху. Из-за этого озёр не было видно
+	-- (вода пряталась в земле), а острова стояли под водой. Поэтому сначала вырезаем место (Air),
+	-- потом заливаем. Уровень воды — на 2 стада ниже земли, чтобы берега и острова были над водой.
+	local WATER_TOP = -2
 	-- море: полосами от берега, потом острова клетками помельче
 	local ystep = 80
 	for y = 0, H - 1, ystep do
 		local cx = World.coastX(y + ystep / 2)
 		local x0 = cx - 40
-		T:FillBlock(CFrame.new(((x0 + W) / 2) * K, -6, (y + ystep / 2) * K), Vector3.new((W - x0) * K + 2, 12, ystep * K), M.Water)
+		local cxx, cz, sx, sz = ((x0 + W) / 2) * K, (y + ystep / 2) * K, (W - x0) * K + 2, ystep * K
+		T:FillBlock(CFrame.new(cxx, -4, cz), Vector3.new(sx, 24, sz), M.Air)
+		T:FillBlock(CFrame.new(cxx, -14, cz), Vector3.new(sx, 4, sz), M.Sand)
+		T:FillBlock(CFrame.new(cxx, (-12 + WATER_TOP) / 2, cz), Vector3.new(sx, WATER_TOP + 12, sz), M.Water)
 		yieldSome()
 	end
 	local c8 = 80
@@ -142,7 +150,8 @@ local function buildTerrain()
 				local q = World.blobInfo(I, x, y)
 				if q.d < q.R then
 					local edge = q.d > q.R - 140 / q.unit
-					T:FillBlock(CFrame.new(x * K, -6, y * K), Vector3.new(c8 * K, 12, c8 * K), (edge and not I.bone) and M.Sand or mat)
+					T:FillBlock(CFrame.new(x * K, -4, y * K), Vector3.new(c8 * K, 24, c8 * K), M.Air)
+					T:FillBlock(CFrame.new(x * K, -7, y * K), Vector3.new(c8 * K, 14, c8 * K), (edge and not I.bone) and M.Sand or mat)
 				end
 				yieldSome()
 			end
@@ -153,13 +162,16 @@ local function buildTerrain()
 		for x = L.x - L.rx * 1.4, L.x + L.rx * 1.4, c8 / 2 do
 			for y = L.y - L.ry * 1.4, L.y + L.ry * 1.4, c8 / 2 do
 				if World.inBlob(L, x, y) then
-					local cf = CFrame.new(x * K, -3, y * K)
-					local size = Vector3.new(c8 / 2 * K, 6, c8 / 2 * K)
+					local cf = CFrame.new(x * K, -4.5, y * K)
+					local size = Vector3.new(c8 / 2 * K, 7, c8 / 2 * K)
 					if L.lava then
 						T:FillBlock(CFrame.new(x * K, -2, y * K), Vector3.new(c8 / 2 * K, 4, c8 / 2 * K), M.CrackedLava)
 					elseif L.ice then
 						T:FillBlock(CFrame.new(x * K, -2, y * K), Vector3.new(c8 / 2 * K, 4, c8 / 2 * K), M.Glacier)
 					else
+						-- ямка, дно из песка и вода чуть ниже берега
+						T:FillBlock(CFrame.new(x * K, -2, y * K), Vector3.new(c8 / 2 * K, 12, c8 / 2 * K), M.Air)
+						T:FillBlock(CFrame.new(x * K, -9, y * K), Vector3.new(c8 / 2 * K, 2, c8 / 2 * K), M.Sand)
 						T:FillBlock(cf, size, M.Water)
 					end
 				end
@@ -205,7 +217,7 @@ local function buildTerrain()
 	end
 	-- маленькие пещерки: каменный потолок
 	for _, g in ipairs(World.GROTTOS) do
-		T:FillCylinder(CFrame.new(g.x * K, 15, g.y * K), 4, g.r * K + 4, M.Rock)
+		T:FillCylinder(CFrame.new(g.x * K, 30, g.y * K), 4, g.r * K + 4, M.Rock) -- потолок вдвое выше (был на 15)
 		T:FillCylinder(CFrame.new(g.x * K, -2, g.y * K), 4, g.r * K, M.Slate)
 	end
 	-- небесные острова
@@ -300,9 +312,39 @@ local function fenceRect(s, parent, height, color)
 	inv.CanQuery = false
 end
 
-local function roofOver(r, y, color, overhang)
+-- двускатная (треугольная) крыша из двух клиньев над прямоугольником карты r; y — низ крыши.
+-- Конёк идёт вдоль длинной стороны. Возвращает модель (вызывающий кладёт её в нужную папку).
+local function roofOver(r, y, color, overhang, rise)
 	overhang = overhang or 1
-	return part({ size = Vector3.new(r.w * K + overhang * 2, 0.6, r.h * K + overhang * 2), cframe = CFrame.new((r.x + r.w / 2) * K, y, (r.y + r.h / 2) * K), color = color, material = M.WoodPlanks })
+	local alongX = r.w >= r.h
+	local L = (alongX and r.w or r.h) * K + overhang * 2
+	local D = (alongX and r.h or r.w) * K + overhang * 2
+	rise = rise or math.clamp(D * 0.38, 1.5, 10)
+	local m = Instance.new("Model")
+	m.Name = "Roof"
+	local center = CFrame.new((r.x + r.w / 2) * K, World.GROUND + y + rise / 2, (r.y + r.h / 2) * K) * CFrame.Angles(0, alongX and 0 or math.pi / 2, 0)
+	for _, s in ipairs({ -1, 1 }) do
+		-- у клина высокая сторона смотрит в +Z: поворачиваем так, чтобы обе высокие стороны сходились в коньке
+		local wd = Instance.new("WedgePart")
+		wd.Anchored = true
+		wd.Size = Vector3.new(L, rise, D / 2)
+		wd.CFrame = center * CFrame.new(0, 0, s * D / 4) * CFrame.Angles(0, s > 0 and math.pi or 0, 0)
+		wd.Color = col(color)
+		wd.Material = M.WoodPlanks
+		wd.TopSurface = Enum.SurfaceType.Smooth
+		wd.BottomSurface = Enum.SurfaceType.Smooth
+		wd.Parent = m
+	end
+	-- конёк
+	local ridge = Instance.new("Part")
+	ridge.Anchored = true
+	ridge.Size = Vector3.new(L + 0.2, 0.5, 0.7)
+	ridge.CFrame = center * CFrame.new(0, rise / 2, 0)
+	ridge.Color = col(color):Lerp(Color3.new(0, 0, 0), 0.25)
+	ridge.Material = M.WoodPlanks
+	ridge.Parent = m
+	m.Parent = root
+	return m
 end
 
 local function lamp(x, y, parent)
@@ -329,9 +371,10 @@ local function buildFarm()
 	-- конюшня
 	local S = World.STABLE
 	for _, s in ipairs(World.SOLIDS) do
-		if s.kind == "stable" and s.x < World.SEA.x - 400 then rectBox(s, 0, 9, "#c8a27a", M.WoodPlanks, true, f) end
+		-- стены вдвое выше прежнего (были 9), внутри высокий потолок
+		if s.kind == "stable" and s.x < World.SEA.x - 400 then rectBox(s, 0, 18, "#c8a27a", M.WoodPlanks, true, f) end
 	end
-	roofOver(S, 9.3, "#a33a2a", 1.5).Parent = f
+	roofOver(S, 18, "#a33a2a", 1.5).Parent = f
 	for i = 0, 19 do
 		local r = World.stallRect(i)
 		if i % 10 ~= 0 then
@@ -341,7 +384,7 @@ local function buildFarm()
 		local back = r.row == 1 and (r.y + r.h - 12) or (r.y + 12)
 		part({ size = Vector3.new(3, 1, 1.2), cframe = CFrame.new((r.x + r.w / 2) * K, 2.5, back * K), color = DARKWOOD, material = M.Wood, parent = f, collide = false })
 	end
-	label("🐴 КОНЮШНЯ", S.x + S.w / 2, S.y - 10, 13, "#3b2a1a", 300, 26)
+	label("🐴 КОНЮШНЯ", S.x + S.w / 2, S.y - 10, 30, "#3b2a1a", 300, 26)
 	-- манеж
 	local A = World.ARENA
 	for _, s in ipairs(World.SOLIDS) do
@@ -437,25 +480,20 @@ end
 
 local function house(hh, parent)
 	local r = hh
-	rectBox(r, 0, 7, hh.wall, M.SmoothPlastic, true, parent)
-	-- двускатная крыша из двух клиньев
-	local w, d = r.w * K + 1.4, r.h * K + 1.4
-	local cx, cz = (r.x + r.w / 2) * K, (r.y + r.h / 2) * K
-	for _, s in ipairs({ -1, 1 }) do
-		local wd = Instance.new("WedgePart")
-		wd.Anchored = true
-		wd.Size = Vector3.new(w, 4, d / 2)
-		wd.CFrame = CFrame.new(cx, World.GROUND + 9, cz + s * d / 4) * CFrame.Angles(0, s > 0 and math.pi or 0, 0)
-		wd.Color = col(hh.roof)
-		wd.Material = M.SmoothPlastic
-		wd.Parent = parent
-	end
-	-- дверь и окна
-	part({ size = Vector3.new(2, 3.6, 0.2), cframe = CFrame.new(cx, 1.8, (r.y + r.h) * K + 0.1), color = DARKWOOD, parent = parent, collide = false })
+	-- стены вдвое выше прежнего (были 7) и треугольная крыша
+	local WALL = 14
+	rectBox(r, 0, WALL, hh.wall, M.SmoothPlastic, true, parent)
+	local cx = (r.x + r.w / 2) * K
+	roofOver(r, WALL, hh.roof, 0.7, math.clamp(math.min(r.w, r.h) * K * 0.45, 3, 7)).Parent = parent
+	-- дверь и окна в два этажа
+	part({ size = Vector3.new(2.4, 5, 0.2), cframe = CFrame.new(cx, 2.5, (r.y + r.h) * K + 0.1), color = DARKWOOD, parent = parent, collide = false })
 	for _, sx in ipairs({ -1, 1 }) do
-		part({ size = Vector3.new(1.8, 1.5, 0.2), cframe = CFrame.new(cx + sx * r.w * K * 0.3, 4, (r.y + r.h) * K + 0.1), color = "#a5d8ff", material = M.Glass, parent = parent, collide = false })
+		for _, wy in ipairs({ 4.5, 10.5 }) do
+			part({ size = Vector3.new(1.8, 1.8, 0.2), cframe = CFrame.new(cx + sx * r.w * K * 0.3, wy, (r.y + r.h) * K + 0.1), color = "#a5d8ff", material = M.Glass, parent = parent, collide = false })
+		end
 	end
-	if hh.name then label(hh.name, r.x + r.w / 2, r.y - 10, 13, "#3b2a1a", 220, 18) end
+	part({ size = Vector3.new(1.8, 1.8, 0.2), cframe = CFrame.new(cx, 10.5, (r.y + r.h) * K + 0.1), color = "#a5d8ff", material = M.Glass, parent = parent, collide = false })
+	if hh.name then label(hh.name, r.x + r.w / 2, r.y - 10, 24, "#3b2a1a", 220, 18) end
 end
 
 local function buildVillage()
@@ -504,9 +542,10 @@ local function buildSeaside()
 		end
 		-- лодка
 		local bx = x * K + dir * (len + 3)
-		part({ size = Vector3.new(7, 1.4, 3.2), cframe = CFrame.new(bx, 0.2, y * K + 4.5), color = "#c92a2a", material = M.Wood, parent = f, collide = false })
-		part({ size = Vector3.new(0.3, 6, 0.3), cframe = CFrame.new(bx, 3.5, y * K + 4.5), color = DARKWOOD, parent = f, collide = false })
-		part({ size = Vector3.new(0.1, 4, 3), cframe = CFrame.new(bx + 0.3, 4, y * K + 4.5) * CFrame.Angles(0, math.pi / 2, 0), color = "#ffffff", material = M.Fabric, parent = f, collide = false })
+		-- вода на 2 стада ниже земли — лодка стоит на воде
+		part({ size = Vector3.new(7, 1.4, 3.2), cframe = CFrame.new(bx, -1.6, y * K + 4.5), color = "#c92a2a", material = M.Wood, parent = f, collide = false })
+		part({ size = Vector3.new(0.3, 6, 0.3), cframe = CFrame.new(bx, 1.7, y * K + 4.5), color = DARKWOOD, parent = f, collide = false })
+		part({ size = Vector3.new(0.1, 4, 3), cframe = CFrame.new(bx + 0.3, 2.2, y * K + 4.5) * CFrame.Angles(0, math.pi / 2, 0), color = "#ffffff", material = M.Fabric, parent = f, collide = false })
 	end
 	pier(World.PIER.x - 20, World.PIER.y, 1)
 	label("⛵ Пристань", World.PIER.x, World.PIER.y - 40, 8, "#1c4f8a", 220, 20)
@@ -514,9 +553,9 @@ local function buildSeaside()
 		pier(I.pier.x, I.pier.y, -1)
 		-- конюшня на 5 денников
 		for _, s in ipairs(World.SOLIDS) do
-			if s.kind == "stable" and World.inRect(s.x, s.y, I.stable, 5) then rectBox(s, 0, 8, "#c8a27a", M.WoodPlanks, true, f) end
+			if s.kind == "stable" and World.inRect(s.x, s.y, I.stable, 5) then rectBox(s, 0, 16, "#c8a27a", M.WoodPlanks, true, f) end
 		end
-		roofOver(I.stable, 8.3, "#2f6f8f", 1).Parent = f
+		roofOver(I.stable, 16, "#2f6f8f", 1).Parent = f
 		for k = 1, 4 do
 			part({ size = Vector3.new(0.4, 4, 12), cframe = CFrame.new((I.stable.x + k * 68) * K, 2, (I.stable.y + 70) * K), color = WOOD, parent = f })
 		end
@@ -607,7 +646,7 @@ local function buildCaveAndSky()
 	rectBox({ x = St.x, y = St.y, w = St.w, h = St.h }, 0, 0.8, "#c8a27a", M.WoodPlanks, true, f)
 	house({ x = St.x + 30, y = St.y - 60, w = 160, h = 70, wall = "#f1e3c6", roof = "#c92a2a" }, f)
 	roofOver({ x = St.x + 220, y = St.y, w = 280, h = St.h }, 6.5, "#2f6f8f", 0).Parent = f
-	label("🚂 СТАНЦИЯ", St.x + 110, St.y - 25, 12, "#c92a2a", 300, 22)
+	label("🚂 СТАНЦИЯ", St.x + 110, St.y - 25, 24, "#c92a2a", 300, 22)
 	for _, g in ipairs(World.GROTTOS) do label("🕳️ Пещерка", g.x, g.y - g.r - 30, 20, "#343a40", 260, 18) end
 end
 
