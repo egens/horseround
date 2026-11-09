@@ -24,7 +24,7 @@ end
 -- лошадь на верёвке после лассо
 function Owned.attachLed(sess, h)
 	h.vx, h.vy = 0, 0
-	Entities.addHorse(h, label(sess, h, "➰ "))
+	Entities.addHorse(h, label(sess, h, "➰ "), sess.player.UserId)
 end
 function Owned.releaseLed(sess)
 	local h = sess.led
@@ -44,8 +44,10 @@ end
 function Owned.syncEntities(sess)
 	for _, h in ipairs(sess.P.horses) do
 		local want = h.state == "paddock" or h.state == "walk"
+		local leadBy = h.state == "walk" and sess.player.UserId or nil
+		if want and h._ent and h._ent.leadBy ~= leadBy then Entities.removeSrc(h) end
 		if want and not h._ent then
-			Entities.addHorse(h, label(sess, h, h.state == "walk" and "🐾 " or ""))
+			Entities.addHorse(h, label(sess, h, h.state == "walk" and "🐾 " or ""), leadBy)
 		elseif not want and h._ent then
 			Entities.removeSrc(h)
 		elseif want and h._ent then

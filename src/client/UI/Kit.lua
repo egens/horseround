@@ -166,10 +166,17 @@ function Kit.portrait(parent, look, w, h, tack)
 	return vpf
 end
 
--- карточка: портрет и строки, extra(card) — кнопки
+-- карточка: портрет и строки, extra(card) — кнопки.
+-- Если карточка кликабельная, она сама кнопка (TextButton). Раньше поверх лежала прозрачная кнопка
+-- размером 100% карточки, но она попадала в UIListLayout и раздувала AutomaticSize — карточка росла бесконечно.
 function Kit.card(parent, look, lines, extra, opts)
 	opts = opts or {}
-	local card = make("Frame", { Size = UDim2.fromOffset(opts.width or 176, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = opts.selected and color("#d0ebff") or C.panel2, LayoutOrder = nextOrder(), Parent = parent })
+	local props = { Size = UDim2.fromOffset(opts.width or 176, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = opts.selected and color("#d0ebff") or C.panel2, LayoutOrder = nextOrder(), Parent = parent }
+	if opts.onClick then
+		props.Text = ""
+		props.AutoButtonColor = true
+	end
+	local card = make(opts.onClick and "TextButton" or "Frame", props)
 	Kit.corner(card, 10)
 	Kit.pad(card, 6)
 	make("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = card })
@@ -178,11 +185,25 @@ function Kit.card(parent, look, lines, extra, opts)
 		Kit.text(card, line, { size = i == 1 and 15 or 13, bold = i == 1, color = i == 1 and C.text or C.muted })
 	end
 	if extra then extra(card) end
-	if opts.onClick then
-		local b = make("TextButton", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "", ZIndex = 5, Parent = card })
-		b.Activated:Connect(opts.onClick)
-	end
+	if opts.onClick then card.Activated:Connect(opts.onClick) end
 	return card
+end
+
+-- кнопка «закрыть»: крестик нарисован двумя повёрнутыми полосками —
+-- символа «✕» нет в шрифтах Roblox, и он был невидим
+function Kit.closeButton(parent, onClick, size, props)
+	size = size or 34
+	local p = { Size = UDim2.fromOffset(size, size), BackgroundColor3 = C.red, Text = "", AutoButtonColor = true, Parent = parent }
+	for k, v in pairs(props or {}) do p[k] = v end
+	local b = make("TextButton", p)
+	Kit.corner(b, size / 2)
+	Kit.stroke(b, C.white, 2)
+	for _, rot in ipairs({ 45, -45 }) do
+		make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0.62, 0, 0, math.max(3, math.floor(size / 9))),
+			Rotation = rot, BackgroundColor3 = C.white, BorderSizePixel = 0, ZIndex = b.ZIndex + 1, Parent = b })
+	end
+	if onClick then b.Activated:Connect(onClick) end
+	return b
 end
 
 function Kit.grid(parent)

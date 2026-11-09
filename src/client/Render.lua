@@ -102,6 +102,14 @@ local function buildDeer(look)
 	sp(Vector3.new(3.4, 1.5, 1.4), Vector3.new(0, 3.4, 0), body)
 	sp(Vector3.new(0.8, 1.8, 0.8), Vector3.new(1.7, 4.4, 0), body)
 	sp(Vector3.new(1.3, 0.8, 0.8), Vector3.new(2.2, 5.3, 0), body)
+	-- глаза: тёмные с белым бликом, и чёрный нос
+	for _, z in ipairs({ -0.41, 0.41 }) do
+		sp(Vector3.new(0.24, 0.24, 0.06), Vector3.new(2.45, 5.45, z), "#1a1412")
+		sp(Vector3.new(0.08, 0.08, 0.07), Vector3.new(2.5, 5.5, z * 1.02), "#ffffff")
+		-- уши
+		sp(Vector3.new(0.12, 0.45, 0.3), Vector3.new(1.85, 5.85, z * 1.1), body)
+	end
+	sp(Vector3.new(0.12, 0.25, 0.35), Vector3.new(2.86, 5.25, 0), "#1a1412")
 	sp(Vector3.new(0.6, 0.4, 0.6), Vector3.new(0.0, 2.9, 0), light)
 	for _, x in ipairs({ -1.3, 1.3 }) do
 		for _, z in ipairs({ -0.45, 0.45 }) do sp(Vector3.new(0.35, 2.7, 0.35), Vector3.new(x, 1.35, z), "#6b4423") end
@@ -164,6 +172,26 @@ local function buildEntity(e)
 	if not built then return end
 	if e.built then e.built.model:Destroy() end
 	e.built = built
+	-- лошадь на верёвке: петля на шее и тонкая верёвка до руки игрока
+	if d.kind == "horse" and d.leadBy then
+		local ok, att = pcall(HB.addCollar, built)
+		if ok and att then
+			att.Axis = Vector3.new(0, -1, 0)
+			local beam = Instance.new("Beam")
+			beam.Attachment0 = att
+			beam.Width0, beam.Width1 = 0.09, 0.09
+			beam.FaceCamera = true
+			beam.Segments = 12
+			beam.CurveSize0 = 1.4
+			beam.Color = ColorSequence.new(Util.color("#c9a66b"))
+			beam.LightInfluence = 1
+			beam.Transparency = NumberSequence.new(0)
+			beam.Enabled = false
+			beam.Parent = built.model
+			built.rope = beam
+			built.leadBy = d.leadBy
+		end
+	end
 	built.model:SetAttribute("EntityId", e.id)
 	built.model:SetAttribute("EntityKind", d.kind)
 	addLabel(built.model, d.label, d.kind == "rider" and 13 or 8.5, d.kind == "rider" and "#5f3dc4" or "#1c4f8a")
@@ -240,7 +268,9 @@ local function updateMount(pl, dt, t)
 	local ground = hrp.Position - Vector3.new(0, hrp.Size.Y / 2 + hip, 0)
 	local lv = hrp.CFrame.LookVector
 	local vel = hrp.AssemblyLinearVelocity
-	local spd = Vector3.new(vel.X, 0, vel.Z).Magnitude / K
+	-- скорость по физике дёргается от кадра к кадру — сглаживаем, иначе лошадь трясёт головой
+	rec.spd = (rec.spd or 0) + (Vector3.new(vel.X, 0, vel.Z).Magnitude / K - (rec.spd or 0)) * math.min(1, dt * 5)
+	local spd = rec.spd
 	rec.phase += dt * (3 + spd * 0.045) * (spd > 4 and 1 or 0)
 	local act = nil
 	local a = char:GetAttribute("MountAct")
@@ -329,7 +359,7 @@ function Render.update(dt)
 			e.px += (e.tx - e.px) * k
 			e.py += (e.ty - e.py) * k
 			e.angle = Util.lerpAngle(e.angle, e.ta, k)
-			e.spd = e.tspd
+			e.spd += ((e.tspd or 0) - e.spd) * math.min(1, dt * 4)
 			e.fly += ((e.tfly or 0) - e.fly) * k
 			e.z += ((e.tz or 0) - e.z) * math.min(1, dt * 15)
 			e.phase += dt * (3 + e.spd * 0.045) * (e.spd > 4 and 1 or 0)
@@ -356,6 +386,17 @@ function Render.update(dt)
 				end
 				HB.pose(b, { pos = pos, angle = e.angle, spd = e.spd, phase = e.phase, fly = e.fly, flyH = 9, act = act, t = t })
 			end
+		end
+	end
+	-- верёвки от руки игрока к лошади
+	for _, e in pairs(ents) do
+		local b = e.built
+		if b and b.rope then
+			local pl = Players:GetPlayerByUserId(b.leadBy)
+			local ch = pl and pl.Character
+			local hand = ch and (ch:FindFirstChild("RightGripAttachment", true) or ch:FindFirstChild("RootAttachment", true))
+			if hand ~= b.rope.Attachment1 then b.rope.Attachment1 = hand end
+			b.rope.Enabled = hand ~= nil
 		end
 	end
 	for _, pl in ipairs(Players:GetPlayers()) do updateMount(pl, dt, t) end

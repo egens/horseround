@@ -690,13 +690,8 @@ function HV.tackCells(R)
 	fill(-3, 0, 14, 14, -2, 1, sc)
 	fill(-4, -4, 14, 15, -2, 1, sc)
 	put(1, 14, -1, sc); put(1, 14, 0, sc)
-	for x = 12, 14 do put(x, 15, -2, bc); put(x, 15, 1, bc) end
-	put(14, 14, -2, bc); put(14, 14, 1, bc); put(15, 16, -1, bc); put(15, 16, 0, bc)
-	for x = 4, 11 do
-		local y = 17 - math.floor((x - 4) / 4 + 0.5)
-		put(x, y, -3, bc); put(x, y, 2, bc)
-	end
-	local st, bs = R.saddleStyle or "classic", R.bridleStyle or "classic"
+	-- уздечка и повод — тонкими ремешками, их строит HorseBuilder (HB.addBridle)
+	local st = R.saddleStyle or "classic"
 	if st == "crystal" then
 		for _, q in ipairs({ { 1, 15, -1, "#74c0fc" }, { 1, 15, 0, "#f783ac" }, { -4, 16, -1, "#b197fc" }, { -4, 16, 0, "#63e6be" }, { -4, 13, -5, "#74c0fc" }, { 1, 13, -5, "#f783ac" }, { -4, 13, 4, "#63e6be" }, { 1, 13, 4, "#b197fc" } }) do
 			gl(q[1], q[2], q[3], q[4])
@@ -712,9 +707,6 @@ function HV.tackCells(R)
 		end
 		put(-4, 16, -1, "#ffc9de"); put(-4, 16, 0, "#fff5f0"); gl(1, 15, 0, "#fff9f5")
 	end
-	if bs == "crystal" then gl(12, 16, -2, "#74c0fc"); gl(12, 16, 1, "#f783ac"); gl(14, 16, -1, "#b197fc")
-	elseif bs == "plant" then put(12, 16, -2, "#69db7c"); put(12, 16, 1, "#2f9e44"); put(13, 16, -2, "#ff8fab"); put(13, 16, 1, "#ffd43b")
-	elseif bs == "shell" then put(13, 16, -2, "#ffc9de"); put(13, 16, 1, "#fff5f0"); gl(14, 16, 0, "#fff9f5") end
 	return { cells = cells, glow = glow }
 end
 
@@ -760,7 +752,7 @@ function HV.actPose(a)
 		P.legs[leg + 1] = (leg >= 2 and -0.9 or 1.15) * q
 		P.head = -0.1 * q
 	elseif k == "ears" then P.ears = 1.25 * q; P.head = -0.12 * q
-	elseif k == "neigh" then P.head = 0.6 * q + math.sin(tt * 34) * 0.05 * q; P.ears = -0.25 * q; P.px = -6 * V; P.pitch = 0.08 * q
+	elseif k == "neigh" then P.head = 0.6 * q + math.sin(tt * 9) * 0.025 * q; P.ears = -0.25 * q; P.px = -6 * V; P.pitch = 0.08 * q
 	elseif k == "lookUp" then P.head = 0.8 * q
 	elseif k == "lookDown" then P.head = -0.8 * q
 	elseif k == "bow" then P.px = 5 * V; P.pitch = -0.12 * q; P.head = -1.05 * q; P.legs = { 0.75 * q, -0.1 * q, 0, 0 }

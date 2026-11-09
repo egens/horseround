@@ -53,7 +53,7 @@ function Entities.forget(sess)
 end
 
 local function spawnData(e)
-	return { id = e.id, kind = e.kind, look = e.lookFn and e.lookFn() or {}, label = e.label }
+	return { id = e.id, kind = e.kind, look = e.lookFn and e.lookFn() or {}, label = e.label, leadBy = e.leadBy }
 end
 
 local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
@@ -133,9 +133,12 @@ function Entities.tick(dt)
 end
 
 -- стандартная лошадь как сущность
-function Entities.addHorse(h, label)
+-- leadBy — UserId игрока, который ведёт лошадь на верёвке (клиент рисует верёвку от руки к шее)
+function Entities.addHorse(h, label, leadBy)
 	local Horses = G.Horses
-	return Entities.add("horse", h, function() return Horses.look(h) end, function() return Horses.lookKey(h) end, label)
+	local e = Entities.add("horse", h, function() return Horses.look(h) end, function() return Horses.lookKey(h) end, label)
+	e.leadBy = leadBy
+	return e
 end
 
 Entities.list = list

@@ -201,8 +201,9 @@ views.breed = function(B, d)
 		Kit.text(box, "Мама: <b>" .. esc(m.name) .. "</b> (" .. esc(Horses.pheno(m).name) .. ") · папа: <b>" .. esc(f.name) .. "</b> (" .. esc(Horses.pheno(f).name) .. ")")
 		Kit.text(box, "Порода: <b>" .. esc(breed) .. "</b>")
 		for _, x in ipairs(pred) do Kit.bar(box, x.name, x.pct, "#f783ac") end
-		Kit.small(box, "Ветеринар: 30 💰. Жеребёнок родится через 2,5 минуты, если будет свободный денник.")
-		Kit.button(Kit.row(box), "💕 Скрестить", function() act("breed", m.id, f.id) end, { color = "pink", big = true })
+		local cost = Horses.breedCost(m, f)
+		Kit.small(box, "Ветеринар: " .. cost .. " 💰 (чем дороже и волшебнее родители, тем дороже). Жеребёнок родится через 2,5 минуты, если будет свободный денник.")
+		Kit.button(Kit.row(box), "💕 Скрестить за " .. cost .. " 💰", function() act("breed", m.id, f.id) end, { color = "pink", big = true, disabled = P.money < cost })
 	end
 	return "Скрещивание: " .. h.name
 end
@@ -969,9 +970,7 @@ function Win.build(parentGui)
 	make("UISizeConstraint", { MaxSize = Vector2.new(820, 700), Parent = box })
 	Kit.corner(box, 14)
 	titleL = make("TextLabel", { Position = UDim2.fromOffset(14, 8), Size = UDim2.new(1, -60, 0, 34), BackgroundTransparency = 1, Text = "", Font = Enum.Font.GothamBlack, TextSize = 21, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 22, Parent = box })
-	local x = make("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.fromOffset(34, 34), BackgroundColor3 = C.panel2, Text = "✕", Font = Kit.BOLD, TextSize = 18, TextColor3 = C.text, ZIndex = 22, Parent = box })
-	Kit.corner(x, 17)
-	x.Activated:Connect(Win.close)
+	Kit.closeButton(box, Win.close, 34, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), ZIndex = 23 })
 	body = make("ScrollingFrame", {
 		Position = UDim2.fromOffset(10, 48), Size = UDim2.new(1, -20, 1, -58), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 8,
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 22, Parent = box,

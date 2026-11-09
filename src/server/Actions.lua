@@ -224,8 +224,9 @@ function A.breed(sess, mare, stallion)
 	if not mare or not stallion or mare.sex ~= "f" or stallion.sex ~= "m" then return end
 	if not Horses.isAdult(mare) or not Horses.isAdult(stallion) then return G.toast(sess, "Обе лошади должны быть взрослыми", "warn") end
 	if mare.preg then return G.toast(sess, mare.name .. " уже ждёт жеребёнка") end
-	if P.money < 30 then return G.toast(sess, "Нужно 30 монет на ветеринара", "warn") end
-	P.money -= 30
+	local cost = Horses.breedCost(mare, stallion)
+	if P.money < cost then return G.toast(sess, "Нужно " .. cost .. " монет на ветеринара", "warn") end
+	P.money -= cost
 	mare.preg = {
 		t = 150,
 		father = { name = stallion.name, g = Util.copy(stallion.g), base = Util.copy(stallion.base), breed = stallion.breed, size = stallion.size,

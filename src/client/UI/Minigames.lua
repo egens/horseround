@@ -89,7 +89,7 @@ local function buildCare()
 	care.shade, care.box = shade, box
 	local head = Kit.row(box)
 	care.title = Kit.text(head, "", { bold = true, size = 20, width = 0, widthOffset = 500 })
-	Kit.button(head, "✕", function() MG.closeCare(false) end, { small = true, color = "ghost" })
+	Kit.closeButton(head, function() MG.closeCare(false) end, 30, { LayoutOrder = Kit.nextOrder() })
 	care.hint = Kit.text(box, "", { size = 15 })
 	care.area = make("Frame", { Size = UDim2.fromOffset(AREA_W, AREA_H), BackgroundColor3 = color("#fff3dc"), ClipsDescendants = true, LayoutOrder = Kit.nextOrder(), Parent = box })
 	Kit.corner(care.area, 10)
@@ -302,6 +302,46 @@ local function buildBirth()
 		require(script.Parent.Hud).toast("🍼 Жеребёнок в деннике. С ним можно гулять, поить молоком, гладить и играть!", "good")
 	end, { big = true, color = "green" })
 end
+-- сердечко из простых деталей (квадрат, повёрнутый на 45°, и два кружка) — так оно видно на любом устройстве
+local HEART_COLS = { "#ff4d6d", "#ff8fab", "#e64980", "#f783ac", "#c2255c" }
+local function heart(parent, size, c)
+	local h = make("Frame", { Size = UDim2.fromOffset(size, size), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, ZIndex = 40, Parent = parent })
+	local parts = {}
+	table.insert(parts, make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.6), Size = UDim2.fromScale(0.5, 0.5), Rotation = 45,
+		BackgroundColor3 = color(c), BorderSizePixel = 0, ZIndex = 40, Parent = h }))
+	for _, x in ipairs({ 0.323, 0.677 }) do
+		local b = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(x, 0.423), Size = UDim2.fromScale(0.5, 0.5),
+			BackgroundColor3 = color(c), BorderSizePixel = 0, ZIndex = 40, Parent = h })
+		Kit.corner(b, size)
+		table.insert(parts, b)
+	end
+	return h, parts
+end
+local function heartBurst(parent, token)
+	task.spawn(function()
+		local t0 = os.clock()
+		while birth.running == token and os.clock() - t0 < 12 do
+			local size = math.random(18, 34)
+			local h, parts = heart(parent, size, HEART_COLS[math.random(1, #HEART_COLS)])
+			local x0 = 0.15 + math.random() * 0.7
+			local y0 = 0.75 + math.random() * 0.2
+			local sway, life, born = math.random() * 6, 2.2 + math.random() * 1.2, os.clock()
+			h.Position = UDim2.fromScale(x0, y0)
+			task.spawn(function()
+				while h.Parent do
+					local k = (os.clock() - born) / life
+					if k >= 1 then h:Destroy() break end
+					h.Position = UDim2.fromScale(x0 + math.sin(k * 6 + sway) * 0.03, y0 - k * 0.7)
+					h.Rotation = math.sin(k * 5 + sway) * 12
+					for _, p in ipairs(parts) do p.BackgroundTransparency = math.clamp((k - 0.6) / 0.4, 0, 1) end
+					RunService.RenderStepped:Wait()
+				end
+			end)
+			task.wait(os.clock() - t0 < 7 and 0.35 or 0.15)
+		end
+	end)
+end
+
 function MG.birth(d)
 	task.spawn(function()
 		local mare, foal
@@ -330,6 +370,7 @@ function MG.birth(d)
 		local t0 = os.clock()
 		local token = {}
 		birth.running = token
+		heartBurst(birth.vpf, token)
 		while birth.running == token do
 			local t = os.clock() - t0
 			if me then HB.pose(me, { pos = Vector3.new(-5, 0, -1), angle = 0.3, spd = 0, act = t < 2.5 and nil or { k = "lookDown", t = math.min(t - 2.5, 1.2), d = 2.5 }, t = t }) end

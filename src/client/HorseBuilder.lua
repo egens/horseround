@@ -224,16 +224,114 @@ function HB.build(look, opts)
 		l.Brightness = 0.8
 		l.Parent = head
 	end
+	local e = {
+		model = model, root = root, content = content, contentM = contentM, head = head, headM = headM, HP = HP,
+		earsM = earsM, EP = EP, legs = legs, tailM = tailM, TP = TP, wings = wings, ph = ph, s = s, seed = h.seed,
+		cloud = mag.cloud, V = V, moveS = 0,
+	}
+	if opts.tack then HB.addBridle(e, opts.tack) end
 	if opts.anchored then
 		for _, d in ipairs(model:GetDescendants()) do
 			if d:IsA("BasePart") then d.Anchored = true end
 		end
 	end
-	return {
-		model = model, root = root, content = content, contentM = contentM, head = head, headM = headM, HP = HP,
-		earsM = earsM, EP = EP, legs = legs, tailM = tailM, TP = TP, wings = wings, ph = ph, s = s, seed = h.seed,
-		cloud = mag.cloud, V = V,
-	}
+	return e
+end
+
+--[[ ---------- тонкие ремешки: уздечка, повод, верёвка на шее ----------
+	Точки — в кубиках лошади (как в HorseVoxels): голова занимает x 11..16, y 14..17, z -1..1,
+	морда x 14..16, y 14..16; шея — x 7..11. Ремешок — тонкий брусок между двумя точками,
+	приваренный к голове (уздечка) или к корпусу (повод). ]]
+local LEATHER = Enum.Material.Fabric
+pcall(function() LEATHER = Enum.Material.Leather end)
+local function strap(e, base, a, b, d, c, material)
+	local V = e.V
+	local off = base == e.head and e.HP or Vector3.zero
+	local pa = Vector3.new(a[1] * V, a[2] * V, a[3] * V) - off
+	local pb = Vector3.new(b[1] * V, b[2] * V, b[3] * V) - off
+	local dir = pb - pa
+	local len = dir.Magnitude
+	if len < 0.01 then return nil end
+	local up = math.abs(dir.Unit.Y) > 0.98 and Vector3.xAxis or Vector3.yAxis
+	local p = newPart(Vector3.new(d, d, len + d), base.CFrame * CFrame.lookAt((pa + pb) / 2, pb, up), c, material or LEATHER)
+	p.CastShadow = false
+	p.Parent = e.model
+	local w = Instance.new("WeldConstraint")
+	w.Part0 = base
+	w.Part1 = p
+	w.Parent = p
+	return p
+end
+local function knob(e, base, at, d, c, material, shape)
+	local V = e.V
+	local off = base == e.head and e.HP or Vector3.zero
+	local p = newPart(Vector3.new(d, d, d), base.CFrame * CFrame.new(Vector3.new(at[1] * V, at[2] * V, at[3] * V) - off), c, material)
+	p.Shape = shape or Enum.PartType.Ball
+	p.CastShadow = false
+	p.Parent = e.model
+	local w = Instance.new("WeldConstraint")
+	w.Part0 = base
+	w.Part1 = p
+	w.Parent = p
+	return p
+end
+
+-- уздечка как настоящая: оголовье за ушами, налобный ремень, нащёчные ремни, капсюль,
+-- подбородный ремень, железо (трензель) с кольцами и тонкий повод к седлу
+function HB.addBridle(e, R)
+	local c = R.bridleColor or "#2b1a10"
+	local d = 0.2 * e.V
+	local H = e.head
+	local Z = 1.07
+	local MANE_TOP = 18.07
+	for _, z in ipairs({ -Z, Z }) do
+		strap(e, H, { 10.95, 13.93, z }, { 10.95, MANE_TOP, z }, d, c)           -- оголовье (по бокам)
+		strap(e, H, { 12.2, 17.07, z }, { 10.95, 16.4, z }, d, c)               -- налобный ремень сбоку
+		strap(e, H, { 10.95, 16.0, z }, { 15.2, 14.5, z }, d, c)                -- нащёчный ремень к кольцу
+		strap(e, H, { 14.3, 13.93, z }, { 14.3, 16.07, z }, d, c)               -- капсюль сбоку
+	end
+	strap(e, H, { 10.95, MANE_TOP, -Z }, { 10.95, MANE_TOP, Z }, d, c)          -- оголовье поверх гривы
+	strap(e, H, { 10.95, 13.93, -Z }, { 10.95, 13.93, Z }, d, c)                -- подбородный (под горлом)
+	strap(e, H, { 12.2, 17.07, -Z }, { 12.2, 17.07, Z }, d, c)                  -- налобный ремень
+	strap(e, H, { 14.3, 16.07, -Z }, { 14.3, 16.07, Z }, d, c)                  -- капсюль сверху
+	strap(e, H, { 14.3, 13.93, -Z }, { 14.3, 13.93, Z }, d, c)                  -- капсюль снизу
+	-- трензель: тонкая железка через рот и два кольца
+	strap(e, H, { 15.25, 14.5, -1.25 }, { 15.25, 14.5, 1.25 }, d * 0.7, "#ced4da", Enum.Material.Metal)
+	for _, z in ipairs({ -1.25, 1.25 }) do knob(e, H, { 15.25, 14.5, z }, 0.55 * e.V, "#dee2e6", Enum.Material.Metal) end
+	-- повод: от колец вдоль шеи к луке седла
+	for _, sg in ipairs({ -1, 1 }) do
+		strap(e, H, { 15.25, 14.5, 1.25 * sg }, { 7.9, 15.3, 1.3 * sg }, d * 0.85, c)
+		strap(e, e.content, { 7.9, 15.3, 1.3 * sg }, { 5.6, 15.35, 1.3 * sg }, d * 0.85, c)
+		strap(e, e.content, { 5.6, 15.35, 1.3 * sg }, { 1.6, 15.45, 0.8 * sg }, d * 0.85, c)
+	end
+	-- украшения уздечки на налобном ремне
+	local bs = R.bridleStyle or "classic"
+	local deco = bs == "crystal" and { { "#74c0fc", NEON }, { "#f783ac", NEON }, { "#b197fc", NEON } }
+		or bs == "plant" and { { "#69db7c", PLASTIC }, { "#ff8fab", PLASTIC }, { "#ffd43b", PLASTIC } }
+		or bs == "shell" and { { "#ffc9de", PLASTIC }, { "#fff5f0", NEON }, { "#ffc9de", PLASTIC } }
+	if deco then
+		for i, z in ipairs({ -0.75, 0, 0.75 }) do
+			knob(e, H, { 12.2, 17.2, z }, 0.42 * e.V, deco[i][1], deco[i][2], bs == "crystal" and Enum.PartType.Block or Enum.PartType.Ball)
+		end
+	end
+end
+
+-- тонкая верёвка на шее у лошади, которую ведут: петля вокруг шеи и узел снизу.
+-- Возвращает Attachment в узле — к нему крепится сама верёвка (Beam) из руки игрока.
+function HB.addCollar(e)
+	local c = "#c9a66b"
+	local d = 0.14 * e.V
+	local H = e.head
+	local X, Z = 9.4, 1.08
+	for _, z in ipairs({ -Z, Z }) do strap(e, H, { X, 12.9, z }, { X, 18.08, z }, d, c, Enum.Material.Fabric) end
+	strap(e, H, { X, 18.08, -Z }, { X, 18.08, Z }, d, c, Enum.Material.Fabric)
+	strap(e, H, { X, 12.9, -Z }, { X, 12.9, Z }, d, c, Enum.Material.Fabric)
+	knob(e, H, { X, 12.8, 0 }, 0.4 * e.V, c, Enum.Material.Fabric)
+	local att = Instance.new("Attachment")
+	att.Name = "RopeKnot"
+	att.Position = Vector3.new(X * e.V, 12.75 * e.V, 0) - e.HP
+	att.Parent = H
+	return att
 end
 
 --[[ поза: как poseHorse в JS. o = { x, y(высота земли), z, angle, spd, phase, fly, lift, act, t, headTurn, hover } ]]
@@ -250,7 +348,11 @@ function HB.pose(e, o)
 	local px, py = A and A.px * K or 0, A and A.py * K or 0
 	e.contentM.C0 = CFrame.new(px, py, 0) * CFrame.Angles(A and A.roll or 0, 0, A and A.pitch or 0) * CFrame.new(-px, -py, 0)
 	local move = math.min(1, (o.spd or 0) / 110)
-	local bob = (move > 0.25 and fly <= 0 and not A) and math.sin((o.phase or 0) * 2) * 0.08 * move or 0
+	-- кивок головой в такт шагам. Раньше голова кивала вдвое чаще ног, а сила кивка
+	-- скакала вместе со скоростью от сервера — голова тряслась. Теперь кивок сглажен и в такт ногам.
+	e.moveS = (e.moveS or 0) + (move - (e.moveS or 0)) * 0.12
+	local nod = math.clamp((e.moveS - 0.25) / 0.35, 0, 1)
+	local bob = (fly <= 0 and not A) and math.sin(o.phase or 0) * 0.045 * nod or 0
 	local headYaw = A and A.headYaw or (o.headTurn or 0) * 0.7
 	e.headM.C0 = CFrame.new(e.HP) * CFrame.Angles(0, headYaw, (A and A.head or 0) + bob + (fly > 0 and 0.15 or 0))
 	e.earsM.C0 = CFrame.new(e.EP - e.HP) * CFrame.Angles(0, 0, A and -A.ears or 0)

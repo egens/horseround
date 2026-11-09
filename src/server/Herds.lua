@@ -36,7 +36,8 @@ local HERDS = {
 for _, g in ipairs(World.GROTTOS) do
 	HERDS[g.id] = { area = { x = g.x - g.r * 0.55, y = g.y - g.r * 0.55, w = g.r * 1.1, h = g.r * 1.1 }, count = 2, sleeps = false, name = "в пещерке", grotto = true }
 end
-HERDS.train = { area = { x = World.STATION.x - 900, y = World.RAIL.y - 1100, w = 2300, h = 1000 }, count = 0, sleeps = false, name = "у станции", special = true }
+-- лошади из поезда не держатся табуном: у каждой своя цель (w.goal), см. Specials.release
+HERDS.train = { area = { x = World.STATION.x - 1300, y = World.RAIL.y - 1100, w = 2900, h = 2000 }, count = 0, sleeps = false, name = "у станции", special = true, scatter = true }
 HERDS.holiday = { area = inset(World.FIELD, 200), count = 0, sleeps = false, name = "на празднике", special = true }
 for _, I in ipairs(World.ISLANDS) do
 	HERDS[I.id] = { area = I.area, count = 5, sleeps = true, name = "на острове «" .. I.name .. "»", island = I }
@@ -265,24 +266,35 @@ function Herds.update(dt)
 					local ax, ay = w.x - p.p.x, w.y - p.p.y
 					local al = hypot(ax, ay)
 					if al == 0 then al = 1 end
-					tx = w.x + (ax / al) * 100 + (herd.x - w.x) * 0.15
-					ty = w.y + (ay / al) * 100 + (herd.y - w.y) * 0.15
+					local pull = herd.scatter and 0 or 0.15
+					tx = w.x + (ax / al) * 100 + (herd.x - w.x) * pull
+					ty = w.y + (ay / al) * 100 + (herd.y - w.y) * pull
 					sp = (170 + Horses.skill(w, "speed") * 0.8) * (w.age < 3 and 0.8 or 1)
 					w.headTurn = 0
 				else
 					if w.flee > 0 then w.flee -= dt end
-					local gx, gy = herd.x + w.slot.x, herd.y + w.slot.y
+					local own = herd.scatter and w.goal
+					local gx, gy
+					if own then gx, gy = w.goal.x, w.goal.y else gx, gy = herd.x + w.slot.x, herd.y + w.slot.y end
 					local gd = hypot(gx - w.x, gy - w.y)
 					if gd > 60 then
 						tx, ty = gx, gy
-						sp = herd.panic > 0 and 190 or gd > 300 and 150 or gd > 150 and 80 or 40
+						if own then sp = w.goal.run and 175 or 45
+						else sp = herd.panic > 0 and 190 or gd > 300 and 150 or gd > 150 and 80 or 40 end
 						w.headTurn = 0
 					else
+						if own then w.goal.run = false end
 						w.grazeT -= dt
 						if w.grazeT <= 0 then
 							w.grazeT = rand(3, 8)
-							w.slot.x += rand(-30, 30)
-							w.slot.y += rand(-30, 30)
+							if own then
+								-- побродить рядом, каждая сама по себе
+								local q = { x = clamp(w.x + rand(-220, 220), F.x + 120, F.x + F.w - 120), y = clamp(w.y + rand(-220, 220), F.y + 120, F.y + F.h - 120) }
+								if not World.blocked(q.x, q.y, 40) then w.goal = q end
+							else
+								w.slot.x += rand(-30, 30)
+								w.slot.y += rand(-30, 30)
+							end
 						end
 						tx, ty, sp = w.x, w.y, 0
 						w.headTurn = math.sin(t * 0.8 + w.seed) * 0.35

@@ -95,7 +95,7 @@ function Hud.build()
 	hudButton(right, "🐴 Лошади", function() Hud.windows.open("stable", { can = true }) end)
 	el.quests = hudButton(right, "📜", W("quests"))
 	hudButton(right, "👥", W("players"))
-	hudButton(right, "🗺️", function() Hud.toggleMap() end)
+	hudButton(right, "🗺 Карта", function() Hud.toggleMap() end)
 	el.detector = hudButton(right, "📡", function() State.act("detector") end)
 	hudButton(right, "🎒", W("inventory"))
 	hudButton(right, "❓", W("help"))
@@ -127,9 +127,7 @@ function Hud.build()
 	el.exHint = Kit.text(el.exercise, "", { size = 15, bold = true })
 	el.exLetter = make("TextLabel", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -34, 0, 0), Size = UDim2.fromOffset(44, 44), BackgroundColor3 = C.white, Text = "", Font = Enum.Font.GothamBlack, TextSize = 26, TextColor3 = color("#1c4f8a"), Parent = el.exercise })
 	Kit.corner(el.exLetter, 8)
-	local x = make("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(28, 28), BackgroundColor3 = C.panel2, Text = "✕", Font = Kit.BOLD, TextSize = 16, TextColor3 = C.text, Parent = el.exercise })
-	Kit.corner(x, 14)
-	x.Activated:Connect(function() State.act("cancelEx") end)
+	Kit.closeButton(el.exercise, function() State.act("cancelEx") end, 28, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0) })
 	-- низ: панели
 	local bottom = make("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(0.9, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
 	make("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Bottom, SortOrder = Enum.SortOrder.LayoutOrder, Parent = bottom })
@@ -170,8 +168,11 @@ function Hud.build()
 	el.lasso = Kit.button(actions, "🤠 Бросить лассо [F]", function() State.act("lasso") end, { big = true, color = "orange" })
 	el.prompt = Kit.button(actions, "", function() State.act("interact") end, { big = true, color = "green" })
 	-- миникарта и большая карта
-	Hud.buildMinimap()
-	Hud.buildBigMap()
+	-- ошибка в карте не должна ломать весь интерфейс
+	for _, f in ipairs({ Hud.buildMinimap, Hud.buildBigMap }) do
+		local ok, err = pcall(f)
+		if not ok then warn("[Hud] карта: " .. tostring(err)) end
+	end
 end
 
 function Hud.onLift()
@@ -214,6 +215,11 @@ function Hud.buildMinimap()
 	mm.others, mm.herds, mm.bunnies = {}, {}, {}
 	mm.shoe = dot("#ffe066", 6)
 	mm.treasure = make("TextLabel", { Size = UDim2.fromOffset(14, 14), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, Text = "✖", TextColor3 = C.red, Font = Kit.BOLD, TextSize = 14, ZIndex = 4, Parent = frame })
+	-- клик или тап по миникарте открывает большую карту
+	local open = make("TextButton", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "", ZIndex = 8, Parent = frame })
+	open.Activated:Connect(function() Hud.toggleMap(true) end)
+	make("TextLabel", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -4, 1, -2), Size = UDim2.fromOffset(110, 14), BackgroundTransparency = 1,
+		Text = "нажми — большая карта", TextSize = 10, Font = Kit.BOLD, TextColor3 = C.white, TextStrokeTransparency = 0.3, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 7, Parent = frame })
 	mm.label = make("TextLabel", { Position = UDim2.fromOffset(4, 2), Size = UDim2.new(1, -8, 0, 14), BackgroundTransparency = 1, Text = "", TextSize = 11, Font = Kit.BOLD, TextColor3 = C.white, TextStrokeTransparency = 0.4, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 6, Parent = frame })
 end
 local function mmPos(x, y)
@@ -356,6 +362,7 @@ function Hud.buildBigMap()
 	local top = make("TextLabel", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 6), Size = UDim2.new(1, -20, 0, 26), BackgroundTransparency = 1,
 		Text = "🗺️ Карта мира — M или клик, чтобы закрыть", Font = Kit.BOLD, TextSize = 18, TextColor3 = C.white, TextStrokeTransparency = 0.2, ZIndex = 39, Parent = frame })
 	bm.title = top
+	Kit.closeButton(frame, function() Hud.toggleMap(false) end, 34, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), ZIndex = 40 })
 	local legend = make("TextLabel", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, -6), Size = UDim2.new(1, -16, 0, 20), BackgroundTransparency = 1,
 		Text = "▲ ты   ⚪ игроки   🟤 табуны   💬 жители   ✖ клад", Font = Kit.BOLD, TextSize = 14, TextColor3 = C.white, TextStrokeTransparency = 0.2,
 		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 39, Parent = frame })
@@ -409,7 +416,10 @@ function Hud.toggleMap(on)
 	if not bm.shade then return end
 	if on == nil then on = not bm.shade.Visible end
 	bm.shade.Visible = on
-	if on then updateBigMap() end
+	if on then
+		local ok, err = pcall(updateBigMap)
+		if not ok then warn("[Hud] большая карта: " .. tostring(err)) end
+	end
 end
 function Hud.mapOpen() return bm.shade ~= nil and bm.shade.Visible end
 
@@ -489,8 +499,8 @@ function Hud.init()
 	Hud.build()
 	State.on("hud", Hud.update)
 	RunService.Heartbeat:Connect(function()
-		if mm.frame then updateMinimap() end
-		if bm.shade and bm.shade.Visible then updateBigMap() end
+		if mm.frame then pcall(updateMinimap) end
+		if bm.shade and bm.shade.Visible then pcall(updateBigMap) end
 	end)
 	GuiService.MenuOpened:Connect(function() end)
 end

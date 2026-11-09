@@ -23,15 +23,35 @@ local tr = nil
 local trainT = FIRST
 local warned = false
 
+-- куда бежать лошади из поезда: каждая в свою сторону, мимо станции
+local function scatterGoal(x, y, a)
+	local A = Herds.HERDS.train.area
+	for try = 1, 12 do
+		local aa = a + (try > 1 and (math.random() - 0.5) * 0.9 or 0)
+		local d = 550 + math.random() * 450
+		local gx = math.clamp(x + math.cos(aa) * d, A.x + 80, A.x + A.w - 80)
+		local gy = math.clamp(y + math.sin(aa) * d, A.y + 80, A.y + A.h - 80)
+		if not World.blocked(gx, gy, 40) and not World.inRect(gx, gy, ST, 200) and math.abs(gy - RAIL.y) > 140 then
+			return { x = gx, y = gy, run = true }
+		end
+	end
+	return { x = x - 300, y = RAIL.y + 500, run = true }
+end
 local function release()
 	local n = 6 + math.random(0, 2)
 	local herd = Herds.HERDS.train
-	herd.x, herd.tx, herd.y, herd.ty, herd.t = Train.STOP_X, Train.STOP_X, RAIL.y - 520, RAIL.y - 520, 4
+	herd.x, herd.tx, herd.y, herd.ty, herd.t = Train.STOP_X, Train.STOP_X, RAIL.y + 400, RAIL.y + 400, 4
+	herd.scatter = true
+	-- выбегают из вагонов на сторону без станции (станция — к северу от путей), левее платформы
 	for i = 0, n - 1 do
-		local h = Herds.makeWild(Train.STOP_X - 260 + i * 70, RAIL.y - 70, "train")
+		local x, y = Train.STOP_X - 540 + i * 55, RAIL.y + 75
+		local h = Herds.makeWild(x, y, "train")
 		h.temper = math.min(h.temper, 0.55)
-		h.angle = -math.pi / 2
-		h.slot = { x = (i - n / 2) * 70, y = -60 + math.random() * 120 }
+		-- направления веером: восток, юг, запад и северо-запад (в обход станции)
+		local a = 0.05 * math.pi + (n > 1 and i / (n - 1) or 0.5) * 1.3 * math.pi + (math.random() - 0.5) * 0.25
+		h.angle = a
+		h.slot = { x = 0, y = 0 }
+		h.goal = scatterGoal(x, y, a)
 		Herds.add(h)
 	end
 	G.toastAll("🐎 Из поезда выбежали красивые лошади! Лови — у тебя одна минута!", "good")
