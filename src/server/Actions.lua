@@ -165,7 +165,11 @@ function A.care(sess, h, kind)
 	if kind == "brush" and not P.tack.brush then return G.toast(sess, "Нужна щётка — купи в повозке «Корм и амуниция»", "warn") end
 	if kind == "shoe" and not ((P.inv.horseshoes or 0) > 0) then return G.toast(sess, "Нужны новые подковы — купи в повозке «Корм и амуниция»", "warn") end
 	if kind == "shoe" and h.age < 2 then return G.toast(sess, "Жеребятам подковы не нужны — копытца ещё мягкие", "warn") end
-	if kind ~= "brush" and kind ~= "wash" and kind ~= "shoe" then return end
+	if kind == "milk" then
+		if h.age >= 3 then return G.toast(sess, "Молоко из бутылочки — для жеребят. Взрослым лучше сено и овёс", "warn") end
+		if not ((P.inv.milk or 0) > 0) then return G.toast(sess, "Нет бутылочки молока — купи в повозке «Корм и амуниция»", "warn") end
+	end
+	if kind ~= "brush" and kind ~= "wash" and kind ~= "shoe" and kind ~= "milk" then return end
 	sess.care = { id = h.id, kind = kind, t = G.time }
 	G.R.Open:FireClient(sess.player, "close")
 	G.R.Care:FireClient(sess.player, { kind = kind, id = h.id })
@@ -188,6 +192,17 @@ function A.careDone(sess, h, kind, score)
 		h.mood = clamp(h.mood + 8 + score * 6, 0, 100)
 		G.toast(sess, "🛁 " .. h.name .. " " .. Horses.v(h, "чистенькая и мокрая", "чистенький и мокрый") .. " — скоро высохнет!", "good")
 		G.stat(sess, "washed")
+	elseif kind == "milk" then
+		-- мини-игра «напоить из бутылочки» пройдена — жеребёнок выпил молоко
+		if not ((P.inv.milk or 0) > 0) then return end
+		local f = Items.FOOD.milk
+		P.inv.milk -= 1
+		h.hunger = clamp(h.hunger + f.hunger, 0, 100)
+		h.energy = clamp(h.energy + f.energy, 0, 100)
+		h.mood = clamp(h.mood + f.mood + 5 + score * 5, 0, 100)
+		G.float("🍼 Ням-ням!", h.x, h.y - 30, "#e64980")
+		G.stat(sess, "milkFed")
+		G.toast(sess, "🍼 " .. h.name .. " " .. Horses.v(h, "выпила", "выпил") .. " всю бутылочку и довольно фыркает!", "good")
 	elseif kind == "shoe" then
 		if not ((P.inv.horseshoes or 0) > 0) then return end
 		P.inv.horseshoes -= 1
@@ -435,6 +450,8 @@ function Actions.handle(sess, name, a, b, c)
 		M.Owned.releaseLed(sess)
 	elseif name == "setGait" then
 		Riding.setGait(sess, a)
+	elseif name == "sprint" then
+		sess.p.sprint = a == true
 	elseif name == "dismount" then
 		Riding.dismount(sess)
 	elseif name == "fly" then

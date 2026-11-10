@@ -149,10 +149,15 @@ Items.ACTS = {
 	scratch = { name = "Почесать голову коленкой", icon = "🤭", d = 3 },
 	back = { name = "Пойти задом", icon = "↩️", d = 2.6 },
 	dance = { name = "Потанцевать на месте", icon = "💃", d = 4.5 },
+	paw = { name = "Покопать ногой", icon = "🐾", d = 3 },
+	toss = { name = "Резко поднять голову", icon = "⤴️", d = 1.6 },
+	shake = { name = "Отряхнуться", icon = "💦", d = 2.2 },
+	swish = { name = "Помахать хвостом", icon = "🪶", d = 3.2 },
 }
-Items.ACT_ORDER = { "rear", "kick", "graze", "roll", "liftLeg", "ears", "neigh", "lookUp", "lookDown", "bow", "scratch", "back", "dance" }
--- коды действий для передачи по сети
-Items.ACT_CODES = { "rear", "kick", "graze", "roll", "liftLeg", "ears", "neigh", "lookUp", "lookDown", "bow", "scratch", "back", "dance", "play", "lie", "getup" }
+Items.ACT_ORDER = { "rear", "kick", "graze", "roll", "liftLeg", "ears", "neigh", "lookUp", "lookDown", "bow", "scratch", "back", "dance", "paw", "toss", "shake", "swish" }
+-- коды действий для передачи по сети (новые — только в конец, чтобы старые номера не съехали)
+Items.ACT_CODES = { "rear", "kick", "graze", "roll", "liftLeg", "ears", "neigh", "lookUp", "lookDown", "bow", "scratch", "back", "dance", "play", "lie", "getup",
+	"paw", "toss", "shake", "swish" }
 
 Items.MEDALS = { gold = "🥇", silver = "🥈", bronze = "🥉" }
 

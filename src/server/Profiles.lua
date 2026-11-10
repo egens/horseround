@@ -45,6 +45,7 @@ function Profiles.new()
 		nextId = 1,
 		seenHelp = false,
 		flags = {}, quests = {}, board = false, bigTreasure = false,
+		caughtBreeds = {}, -- индекс: какие породы поймала (порода → сколько раз)
 		market = false, version = 1,
 	}
 end
@@ -61,6 +62,11 @@ local function normalize(data)
 	s.stats = Util.assign(Profiles.new().stats, data.stats)
 	s.flags = data.flags or {}
 	s.quests = data.quests or {}
+	s.caughtBreeds = type(data.caughtBreeds) == "table" and data.caughtBreeds or {}
+	-- старые сохранения: лошади, которые уже есть, считаются пойманными в индексе
+	for _, h in ipairs(s.horses) do
+		if h.breed and not s.caughtBreeds[h.breed] then s.caughtBreeds[h.breed] = 1 end
+	end
 	local maxId = s.nextId or 1
 	for _, h in ipairs(s.horses) do
 		if h.state == "ridden" or h.state == "led" or h.state == "walk" then h.state = "stall" end

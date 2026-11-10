@@ -239,10 +239,19 @@ function HV.horseCells(h, ph, B)
 		end
 		if ph.leo and fullLeo then return rnd() < 0.28 and spot or WHITE end
 		if ph.leo and part == "barrel" and x <= 0 and y >= 9 then return rnd() < 0.2 and spot or WHITE end
+		-- сплэш: белое снизу — живот, грудь и низ шеи, будто лошадь окунули в белую краску
+		if ph.splash and ((part == "barrel" and (y <= 8 or (y == 9 and rnd() < 0.55))) or (part == "neck" and y <= 12) or (part == "head" and y <= 14)) then return WHITE end
+		-- сабино: неровные белые пятна на животе и боках с «крапинками» по краю
+		if ph.sabino and part == "barrel" and y <= 9 + math.floor(math.sin(x * 0.9 + z) * 1.5) then
+			return rnd() < 0.7 and WHITE or mix(ph.body, "#ffffff", 0.55)
+		end
 		local c = ph.body
 		if ph.stripe and top and z >= -1 and z <= 0 then c = ph.stripe end
+		-- тёмный налёт на спине, крупе и шее
+		if ph.sooty and (y >= 11 or (part == "neck" and y >= 13)) then c = mix(c, "#1b1310", (y >= 12 and 0.3 or 0.18) * (0.8 + rnd() * 0.4)) end
 		if ph.roan and part ~= "head" and rnd() < 0.35 then c = mix(c, "#ffffff", 0.45) end
 		if ph.dapple and rnd() < 0.25 then c = mix(c, "#ffffff", 0.35) end
+		if ph.champ and rnd() < 0.2 then c = mix(c, "#fff4d6", 0.18) end -- шампань переливается
 		return c
 	end
 	-- корпус
@@ -258,20 +267,24 @@ function HV.horseCells(h, ph, B)
 	end
 	-- голова и морда
 	for x = 11, 13 do for y = 14, 16 do for z = -1, 0 do put(x, y, z, bodyCol(x, y, z, "head", false)) end end end
-	local muzzle = (ph.pinkSkin or h.marks.face == 3) and "#d9a597" or mix(ph.body, "#000000", 0.35)
+	local muzzle = (ph.pinkSkin or h.marks.face == 3 or ph.splash) and "#d9a597" or mix(ph.body, "#000000", 0.35)
 	if ph.fox or h.breed == "przewalski" then muzzle = "#efe4cf" end
 	if ph.zebra then muzzle = "#2b2420" end
 	if ph.holiday == "easter" then muzzle = "#ff8fab" end
 	for x = 14, 15 do for y = 14, 15 do for z = -1, 0 do put(x, y, z, muzzle) end end end
-	-- отметины на лбу
-	if h.marks.face and h.marks.face > 0 and not ph.holiday and not ph.scales and not ph.glow and not ph.zebra then
-		local len = h.marks.face == 1 and { 11, 11 } or { 11, 13 }
+	-- отметины на лбу (у сплэша и сабино — широкая проточина)
+	local face = h.marks.face or 0
+	if ph.splash then face = 3 elseif ph.sabino and face < 2 then face = 2 end
+	if face > 0 and not ph.holiday and not ph.scales and not ph.glow and not ph.zebra then
+		local len = face == 1 and { 11, 11 } or { 11, 13 }
 		for x = len[1], len[2] do for z = -1, 0 do put(x, 16, z, WHITE) end end
-		if h.marks.face == 3 then
+		if face == 3 then
 			for x = 11, 13 do for y = 14, 15 do put(x, y, -1, WHITE); put(x, y, 0, WHITE) end end
 		end
 	end
-	put(12, 16, -2, "#1a1412"); put(12, 16, 1, "#1a1412") -- глаза
+	-- глаза: у сплэша голубые, у шампани — светло-янтарные
+	local eye = ph.splash and "#4dabf7" or ph.champ and "#b07b2c" or "#1a1412"
+	put(12, 16, -2, eye); put(12, 16, 1, eye)
 	local ear = ph.fox and ph.fox or ph.scales and mix(ph.scales, "#000000", 0.3) or mix(ph.body, "#000000", 0.2)
 	ears[key3(11, 17, -1)] = ear; ears[key3(11, 17, 1)] = ear
 	if ph.fox then ears[key3(11, 18, -1)] = "#1b1412"; ears[key3(11, 18, 1)] = "#1b1412" end
@@ -538,6 +551,7 @@ function HV.legCells(h, ph, i)
 				if y == -7 then c = "#cfc4e8" end
 			else
 				if ph.tob and y < -2 then c = WHITE
+				elseif (ph.splash or ph.sabino) and y <= -2 then c = WHITE -- высокие белые «чулки»
 				elseif white and y <= -4 then c = WHITE end
 				if ph.leo and h.marks.lp == "full" and y >= -3 and rnd() < 0.3 then c = mix(ph.body, "#000000", 0.2) end
 				if y == -7 then c = "#2b2420" end
@@ -683,6 +697,19 @@ function HV.tackCells(_R)
 	return { cells = {}, glow = {} }
 end
 
+-- насколько поднять лошадь (в кубиках), когда она перекатилась на бок или на спину на угол r вокруг оси вдоль тела,
+-- проходящей на высоте py: считаем самую низкую точку туловища и головы после поворота
+function HV.rollLift(r, py)
+	local c, sn = math.cos(r), math.sin(r)
+	local low = 1e9
+	for _, q in ipairs({ { 7, -3 }, { 7, 3 }, { 13, -3 }, { 13, 3 }, { 18, -1 }, { 18, 1 }, { 14, -1.2 }, { 14, 1.2 } }) do
+		local y, z = q[1] - py, q[2]
+		local yy = py + y * c - z * sn
+		if yy < low then low = yy end
+	end
+	return math.max(0, 0.2 - low)
+end
+
 -- поза для действия лошади (act = { k, t, d, leg })
 local function smooth(k)
 	k = math.clamp(k, 0, 1)
@@ -719,6 +746,9 @@ function HV.actPose(a)
 		local fold = math.min(1, r / 1.45)
 		P.legs = { 0.9 * fold + math.sin(tt * 11) * 0.5 * kick, 0.7 * fold + math.sin(tt * 11 + 2) * 0.5 * kick, -0.8 * fold + math.sin(tt * 11 + 1) * 0.5 * kick, -0.6 * fold + math.sin(tt * 11 + 3) * 0.5 * kick }
 		P.head = 0.3 * fold
+		-- корпус не должен уходить под землю: когда лошадь перекатывается на спину, приподнимаем её так,
+		-- чтобы нижняя точка туловища (и головы) оставалась на земле
+		P.up = HV.rollLift(r, 3) * V
 	elseif k == "liftLeg" then
 		P.legs = { 0, 0, 0, 0 }
 		local leg = a.leg or 0
@@ -742,6 +772,33 @@ function HV.actPose(a)
 		P.legs = { 0.6 * s * q, 0.6 * s * q, -0.4 * s * q, -0.4 * s * q }
 	elseif k == "lie" then
 		P.py = 3 * V; P.roll = 1.45; P.legs = { 0.9, 0.7, -0.8, -0.6 }; P.head = 0.25 + math.sin(tt * 2) * 0.1
+		P.up = HV.rollLift(1.45, 3) * V
+	elseif k == "paw" then
+		-- копает ногой: передняя нога раз за разом выносится вперёд и скребёт землю назад
+		local leg = (a.leg or 0) % 2
+		P.legs = { 0, 0, 0, 0 }
+		P.knees = { 0, 0, 0, 0 }
+		local sc = math.sin(tt * 8)
+		P.legs[leg + 1] = (0.45 + sc * 0.4) * q
+		P.knees[leg + 1] = -(0.4 + math.max(0, sc) * 0.7) * q
+		P.head = -0.55 * q; P.headYaw = 0.15 * q; P.px = 5 * V; P.pitch = -0.04 * q
+	elseif k == "toss" then
+		-- резко вскидывает голову и опускает обратно
+		local imp = p < 0.12 and smooth(p / 0.12) or math.max(0, 1 - (p - 0.12) / 0.5)
+		P.head = (1.0 * imp + math.sin(tt * 14) * 0.06 * imp) * q; P.ears = -0.3 * imp
+		P.px = -6 * V; P.pitch = 0.06 * imp
+	elseif k == "shake" then
+		-- вытягивает шею вперёд и отряхивается всем телом, как собака
+		local env = math.sin(math.pi * math.clamp((p - 0.2) / 0.6, 0, 1))
+		P.head = (-0.2 * q) + math.sin(tt * 26) * 0.08 * env
+		P.headYaw = math.sin(tt * 26) * 0.45 * env
+		P.roll = math.sin(tt * 26 + 0.8) * 0.12 * env
+		P.ears = math.sin(tt * 26) * 0.6 * env
+		P.up = math.abs(math.sin(tt * 26)) * 0.12 * env * V
+	elseif k == "swish" then
+		-- отгоняет мух: хвост хлещет по бокам, голова поворачивается к боку
+		P.headYaw = math.sin(tt * 1.5) * 0.6 * q; P.head = -0.25 * q; P.tail = math.sin(tt * 9) * 1.1 * q
+		P.legs = { 0, 0, 0, math.max(0, math.sin(tt * 3)) * -0.35 * q }
 	elseif k == "getup" then
 		P.py = 3 * V
 		local L = 7 * V

@@ -13,19 +13,24 @@ local LIGHT_RANGE = 0.8   -- и дальность ×0.8
 local BLACK = Color3.new(0, 0, 0)
 local DONE = "GlowDimmed" -- метка, чтобы не приглушать дважды (модели снимают и возвращают в мир)
 
+-- светящиеся грибы (атрибут Glow12) светят на 12% ярче остального
+local BOOST = 1.12
 local function dimPart(p)
 	if p:GetAttribute(DONE) then return end
 	-- фонари на столбах становятся неоновыми только ночью — их лампочки приглушаем сразу
 	if p.Material ~= Enum.Material.Neon and p.Name ~= "LampBulb" then return end
 	p:SetAttribute(DONE, true)
-	p.Color = p.Color:Lerp(BLACK, NEON_DARKEN)
+	local k = NEON_DARKEN
+	if p:GetAttribute("Glow12") then k = 1 - (1 - NEON_DARKEN) * BOOST end
+	p.Color = p.Color:Lerp(BLACK, k)
 end
 
 local function dimLight(l)
 	if l:GetAttribute(DONE) then return end
 	l:SetAttribute(DONE, true)
-	l.Brightness *= LIGHT_BRIGHT
-	l.Range *= LIGHT_RANGE
+	local b = l:GetAttribute("Glow12") and BOOST or 1
+	l.Brightness *= LIGHT_BRIGHT * b
+	l.Range *= LIGHT_RANGE * b
 end
 
 local function handle(d)

@@ -10,7 +10,7 @@ local rng, hypot = Util.rng, Util.hypot
 local World = {}
 local K = 0.1
 World.K = K
-World.SKY_Y = 160 -- высота небесных островов в стадах
+World.SKY_Y = 240 -- высота небесных островов в стадах (выше, чем раньше: острова дальше от земли)
 
 local OX, OY = 3200, 3200
 local W, H = 17600, 12800
@@ -295,6 +295,27 @@ World.SKY_BRIDGES = {}
 for _, b in ipairs({ { 3720, 11000, 2850, 10900 }, { 5880, 11000, 6750, 10900 }, { 4150, 11650, 3550, 11850 }, { 5450, 11650, 6100, 11880 } }) do
 	table.insert(World.SKY_BRIDGES, { b[1] + OX, b[2] + OY, b[3] + OX, b[4] + OY })
 end
+-- мосты должны касаться островов: концы уводим внутрь острова (с запасом), чтобы настил ложился на землю
+for _, b in ipairs(World.SKY_BRIDGES) do
+	for e = 0, 1 do
+		local ex, ey = b[1 + e * 2], b[2 + e * 2]
+		local ox, oy = b[3 - e * 2], b[4 - e * 2]
+		local best, bd = nil, 1e9
+		for _, I in ipairs(World.SKY_ISLANDS) do
+			local q = blobInfo(I, ex, ey)
+			if q.d / q.R < bd then bd = q.d / q.R; best = I end
+		end
+		local L = hypot(ex - ox, ey - oy)
+		local ux, uy = (ex - ox) / L, (ey - oy) / L
+		for _ = 1, 60 do
+			if inBlob(best, ex, ey, -130) then break end
+			ex += ux * 15
+			ey += uy * 15
+		end
+		b[1 + e * 2], b[2 + e * 2] = ex, ey
+		b[e == 0 and "isA" or "isB"] = best.id
+	end
+end
 World.SKY_PORTAL = sh({ x = 4800, y = 10900, r = 55 })
 local function skyIslandAt(x, y, m)
 	for _, I in ipairs(World.SKY_ISLANDS) do
@@ -470,6 +491,103 @@ local function distToRoad(x, y)
 end
 World.distToRoad = distToRoad
 
+--[[ ---------- дома деревни: не на дороге, а у дороги, дверью к дороге ----------
+	Дом ищет ближайшее к исходному место, где ни дом, ни двор не задевают дорогу и другие постройки.
+	Дверь смотрит на ближайшую дорогу — поэтому дома повёрнуты в разные стороны. ]]
+local function yardRect(hh, door)
+	if door == "north" then return { x = hh.x - 70, y = hh.y - 110, w = hh.w + 140, h = hh.h + 170 } end
+	if door == "east" then return { x = hh.x - 60, y = hh.y - 70, w = hh.w + 170, h = hh.h + 140 } end
+	if door == "west" then return { x = hh.x - 110, y = hh.y - 70, w = hh.w + 170, h = hh.h + 140 } end
+	return { x = hh.x - 70, y = hh.y - 60, w = hh.w + 140, h = hh.h + 170 }
+end
+World.yardRect = yardRect
+local function nearestRoadPoint(x, y)
+	local best, bx, by = 1e9, x, y
+	for _, r in ipairs(World.ROADS) do
+		for i = 1, #r - 1 do
+			local ax, ay, cx, cy = r[i][1], r[i][2], r[i + 1][1], r[i + 1][2]
+			local dx, dy = cx - ax, cy - ay
+			local L2 = dx * dx + dy * dy
+			if L2 == 0 then L2 = 1 end
+			local t = math.clamp(((x - ax) * dx + (y - ay) * dy) / L2, 0, 1)
+			local px, py = ax + dx * t, ay + dy * t
+			local d = hypot(px - x, py - y)
+			if d < best then best, bx, by = d, px, py end
+		end
+	end
+	return bx, by, best
+end
+World.nearestRoadPoint = nearestRoadPoint
+local function doorToward(hh)
+	local cx, cy = hh.x + hh.w / 2, hh.y + hh.h / 2
+	local qx, qy = nearestRoadPoint(cx, cy)
+	local vx, vy = qx - cx, qy - cy
+	if math.abs(vx) > math.abs(vy) then return vx > 0 and "east" or "west" end
+	return vy > 0 and "south" or "north"
+end
+do
+	local placed = {}
+	local function rectsHit(a, b, m)
+		return a.x < b.x + b.w + m and a.x + a.w + m > b.x and a.y < b.y + b.h + m and a.y + a.h + m > b.y
+	end
+	local function okSpot(hh, yd)
+		for i = 0, 4 do
+			for j = 0, 4 do
+				if distToRoad(yd.x + yd.w * i / 4, yd.y + yd.h * j / 4) < 50 then return false end
+			end
+		end
+		if rectsHit(yd, World.MARKET, 40) then return false end
+		if hypot(hh.x + hh.w / 2 - WELL.x, hh.y + hh.h / 2 - WELL.y) < 200 then return false end
+		if inRect(World.BOARD.x, World.BOARD.y, yd, 40) then return false end
+		for _, o in ipairs(placed) do
+			if rectsHit(yd, o, 20) then return false end
+		end
+		for _, L in ipairs(World.LAKES) do
+			if math.abs(yd.x + yd.w / 2 - L.x) < yd.w / 2 + L.rx * 1.4 and math.abs(yd.y + yd.h / 2 - L.y) < yd.h / 2 + L.ry * 1.4 then return false end
+		end
+		return true
+	end
+	local offs = {}
+	for i = -16, 16 do
+		for j = -16, 16 do table.insert(offs, { i * 25, j * 25 }) end
+	end
+	table.sort(offs, function(a, b) return a[1] * a[1] + a[2] * a[2] < b[1] * b[1] + b[2] * b[2] end)
+	for _, hh in ipairs(HOUSES) do
+		local x0, y0 = hh.x, hh.y
+		local found = false
+		for _, o in ipairs(offs) do
+			hh.x, hh.y = x0 + o[1], y0 + o[2]
+			local door = doorToward(hh)
+			local yd = yardRect(hh, door)
+			if okSpot(hh, yd) then
+				hh.door = door
+				found = true
+				break
+			end
+		end
+		if not found then
+			hh.x, hh.y = x0, y0
+			hh.door = doorToward(hh)
+		end
+		table.insert(placed, yardRect(hh, hh.door))
+	end
+end
+-- точка перед дверью дома (там стоят жители)
+function World.houseFront(hh, d)
+	d = d or 55
+	local cx, cy = hh.x + hh.w / 2, hh.y + hh.h / 2
+	if hh.door == "north" then return cx, hh.y - d end
+	if hh.door == "east" then return hh.x + hh.w + d, cy end
+	if hh.door == "west" then return hh.x - d, cy end
+	return cx, hh.y + hh.h + d
+end
+function World.houseByName(name)
+	for _, hh in ipairs(HOUSES) do
+		if hh.name == name then return hh end
+	end
+	return nil
+end
+
 --[[ ---------- участки с заборами: дворы у домов деревни и огороды ----------
 	Забор — список отрезков (по осям), в нём калитка, а там, где через участок идёт дорога, — проход. ]]
 World.YARDS, World.PLOTS, World.FENCES = {}, {}, {}
@@ -490,18 +608,20 @@ do
 	end
 	local function fenceAround(r, gateSide, kind)
 		local x1, y1, x2, y2 = r.x, r.y, r.x + r.w, r.y + r.h
-		local gx = (x1 + x2) / 2
-		local gate = gateSide == "south" and { x = gx, y = y2, r = 45 } or { x = gx, y = y1, r = 45 }
+		local gx, gy = (x1 + x2) / 2, (y1 + y2) / 2
+		local gate = gateSide == "south" and { x = gx, y = y2, r = 45 } or gateSide == "east" and { x = x2, y = gy, r = 45 }
+			or gateSide == "west" and { x = x1, y = gy, r = 45 } or { x = gx, y = y1, r = 45 }
 		addSide(x1, y1, x2, y1, gate, kind)
 		addSide(x2, y1, x2, y2, gate, kind)
 		addSide(x2, y2, x1, y2, gate, kind)
 		addSide(x1, y2, x1, y1, gate, kind)
 	end
 	for _, hh in ipairs(HOUSES) do
-		-- двор: вокруг дома, перед дверью (юг) — побольше; калитка напротив двери
-		local y = { x = hh.x - 70, y = hh.y - 60, w = hh.w + 140, h = hh.h + 60 + 110, house = hh }
+		-- двор: вокруг дома, перед дверью — побольше; калитка напротив двери
+		local y = yardRect(hh, hh.door)
+		y.house = hh
 		table.insert(World.YARDS, y)
-		fenceAround(y, "south", "picket")
+		fenceAround(y, hh.door, "picket")
 	end
 	-- огороды в «Полях и огородах»: где не мешают дороги и дома
 	local FL = World.FARMLAND
@@ -621,7 +741,10 @@ do
 		if ok and Util.some(TREES, function(t) return hypot(t.x - x, t.y - y) < 120 end) then ok = false end
 		if ok and distToRoad(x, y) < 50 then ok = false end
 		if ok then
-			table.insert(TREES, { x = x, y = y, r = 32 + r() * 22, kind = r() < 0.3 and "birch" or "oak", s = seedOf(), cr = 9 })
+			-- у фермы много яблонь (большие, с яблоками)
+			local k = r()
+			local kind = k < 0.25 and "birch" or k < 0.65 and "apple" or "oak"
+			table.insert(TREES, { x = x, y = y, r = kind == "apple" and (40 + r() * 22) or (32 + r() * 22), kind = kind, s = seedOf(), cr = kind == "apple" and 11 or 9 })
 		end
 	end
 
@@ -792,7 +915,9 @@ do
 	sampleIn(World.GROTTO, "grotto", 1300, function(x, y)
 		if blockedBig(x, y) or not free(x, y, 160) then return end
 		local k = r()
-		if k < 0.3 then add({ x = x, y = y, r = 90 + r() * 110, kind = "hill", s = seedOf(), cr = 40 })
+		if k < 0.3 then
+			local rr = 40 + r() * 40
+			add({ x = x, y = y, r = rr, kind = "bigbush", s = seedOf(), cr = rr * 0.45 })
 		elseif k < 0.6 then add({ x = x, y = y, r = 30 + r() * 40, kind = "rock", s = seedOf(), cr = 24 })
 		elseif k < 0.8 then
 			local rr = 30 + r() * 20
@@ -835,10 +960,16 @@ do
 	sampleIn(World.DRAGONROCK, "dragonrock", 1500, function(x, y)
 		if blockedBig(x, y) or not free(x, y, 170) then return end
 		local k = r()
-		if k < 0.45 then add({ x = x, y = y, r = 45 + r() * 70, kind = "spire", s = seedOf(), cr = 30 })
-		elseif k < 0.65 then add({ x = x, y = y, r = 26 + r() * 14, kind = "deadtree", s = seedOf(), cr = 9 })
-		elseif k < 0.75 then add({ x = x, y = y, r = 60 + r() * 50, kind = "bigbone", s = seedOf(), cr = 0, soft = true })
-		elseif k < 0.9 then add({ x = x, y = y, r = 30 + r() * 30, kind = "basalt", s = seedOf(), cr = 22 }) end
+		-- страшные скалы: острые чёрные шпили с лавой в трещинах, мёртвые деревья, кости и черепа драконов,
+		-- светящиеся лавовые трещины в земле и дымящиеся жерла
+		if k < 0.36 then add({ x = x, y = y, r = 45 + r() * 80, kind = "spire", s = seedOf(), cr = 30 })
+		elseif k < 0.5 then add({ x = x, y = y, r = 26 + r() * 16, kind = "deadtree", s = seedOf(), cr = 9, dragon = true })
+		elseif k < 0.58 then add({ x = x, y = y, r = 60 + r() * 50, kind = "bigbone", s = seedOf(), cr = 0, soft = true, dragon = true })
+		elseif k < 0.64 then add({ x = x, y = y, r = 70 + r() * 50, kind = "ribcage", s = seedOf(), cr = 0, soft = true, dragon = true })
+		elseif k < 0.69 then add({ x = x, y = y, r = 60 + r() * 40, kind = "dragonskull", s = seedOf(), cr = 30 })
+		elseif k < 0.82 then add({ x = x, y = y, r = 30 + r() * 30, kind = "basalt", s = seedOf(), cr = 22 })
+		elseif k < 0.93 then add({ x = x, y = y, r = 40 + r() * 50, kind = "lavacrack", s = seedOf(), cr = 0, soft = true })
+		else add({ x = x, y = y, r = 30 + r() * 20, kind = "vent", s = seedOf(), cr = 14 }) end
 	end)
 	-- Степь
 	sampleIn(World.STEPPE, "steppe", 2600, function(x, y)
@@ -861,7 +992,8 @@ do
 			if not skip and hypot(x - I.x, y - I.y) >= 260 and free(x, y, I.bone and 120 or 170) then
 				local k = r()
 				if I.bone then
-					if k < 0.3 then add({ x = x, y = y, r = 70 + r() * 70, kind = "bigbone", s = seedOf(), cr = 0, soft = true })
+					if k < 0.2 then add({ x = x, y = y, r = 70 + r() * 70, kind = "bigbone", s = seedOf(), cr = 0, soft = true })
+					elseif k < 0.32 then add({ x = x, y = y, r = 70 + r() * 60, kind = "ribcage", s = seedOf(), cr = 0, soft = true })
 					elseif k < 0.45 then add({ x = x, y = y, r = 60 + r() * 40, kind = "bigskull", s = seedOf(), cr = 36 })
 					elseif k < 0.85 then add({ x = x, y = y, r = 12 + r() * 10, kind = "smallbone", s = seedOf(), cr = 0, soft = true })
 					else add({ x = x, y = y, r = 26 + r() * 14, kind = "deadtree", s = seedOf(), cr = 9 }) end
@@ -906,6 +1038,18 @@ do
 			table.insert(FLOWERS, { x = I.x + math.cos(a) * I.rx * d, y = I.y + math.sin(a) * I.ry * d, c = c, s = 1.5 + r() * 2, sky = true })
 		end
 	end
+	-- трава в лесах (кустики травы и папоротники) и розовая трава в Грибном королевстве
+	local function tufts(rect, id, n, kind)
+		sampleIn(rect, id, n, function(x, y)
+			if inPond(x, y, 20) or distToRoad(x, y) < 45 then return end
+			table.insert(TREES, { x = x, y = y, r = 14 + r() * 12, kind = kind, s = seedOf(), cr = 0, soft = true })
+		end)
+	end
+	tufts(World.FOREST[1], "forest", 1100, "tuft")
+	tufts(World.FOREST[2], "forest", 350, "tuft")
+	tufts(World.FOXWOOD, "foxwood", 750, "tuft")
+	tufts(World.DEEPFOREST, "deepforest", 900, "fern")
+	tufts(World.MUSHROOM, "mushroom", 2000, "pinktuft")
 	local NOFLOWER = { mountain = true, cave = true, desert = true, tundra = true, sea = true, dragonrock = true, i4 = true, grottocave = true }
 	for _ = 1, 14000 do
 		local x, y = r() * W, r() * H
@@ -913,6 +1057,15 @@ do
 			local c = cols[math.floor(r() * #cols) + 1]
 			table.insert(FLOWERS, { x = x, y = y, c = c, s = 1.5 + r() * 2 })
 		end
+	end
+end
+
+-- камни и скалы толкаются по своему настоящему размеру (раньше большие камни можно было пройти насквозь)
+do
+	local ROCKY = { rock = 0.8, cliff = 0.85, snowrock = 0.8, basalt = 0.8, mesa = 0.85, spire = 0.5, cavewall = 0.8, bigskull = 0.6, dragonskull = 0.55 }
+	for _, t in ipairs(TREES) do
+		local f = ROCKY[t.kind]
+		if f then t.cr = math.max(t.cr or 0, t.r * f) end
 	end
 end
 

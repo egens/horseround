@@ -12,6 +12,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Util = require(Shared.Util)
 local Horses = require(Shared.Horses)
 local Net = require(Shared.Net)
+local HV = require(Shared.HorseVoxels)
 
 local Client = script.Parent.Parent
 local State = require(Client.State)
@@ -83,6 +84,7 @@ function MG.lassoOpen() return lasso.data ~= nil end
 
 --[[ ================= уход ================= ]]
 local care = {}
+local pointerDown = false
 local AREA_W, AREA_H = 560, 320
 local function buildCare()
 	local shade, box = overlay("Care")
@@ -245,13 +247,65 @@ local function shoeGame(h)
 	return { title = "🔧 Подковать: " .. h.name, hint = "Жми «Забить гвоздь» (или Пробел), когда молоточек над зелёной зоной", game = g, btn = "🔨 Забить гвоздь" }
 end
 
+-- напоить жеребёнка: держи бутылочку у мордочки (зажми кнопку мыши или палец), пока молоко не кончится.
+-- Жеребёнок шевелит головой — бутылочку нужно вести за ним.
+local function milkGame(h)
+	local look = Horses.look(h)
+	local s0 = Horses.sizeOf(look)
+	local V = HV.V * s0
+	-- где мордочка на портрете: та же камера, что в HB.portrait
+	local center = Vector3.new(2 * V, 9 * V, 0)
+	local camCF = CFrame.lookAt(center + Vector3.new(4 * s0, 3 * s0, 19 * s0), center)
+	local mouth = Vector3.new(15.9 * V, 14.4 * V, 0)
+	local rel = camCF:PointToObjectSpace(mouth)
+	local th = math.tan(math.rad(30) / 2)
+	local mx = (0.5 + (rel.X / -rel.Z) / (2 * th * (AREA_W / AREA_H))) * AREA_W
+	local my = (0.5 - (rel.Y / -rel.Z) / (2 * th)) * AREA_H
+	local ring = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(70, 70), BackgroundColor3 = color("#ffffff"), BackgroundTransparency = 0.6, Parent = care.layer })
+	Kit.corner(ring, 35)
+	Kit.stroke(ring, color("#e64980"), 3)
+	local level = make("Frame", { Position = UDim2.fromOffset(20, 40), Size = UDim2.fromOffset(26, 200), BackgroundColor3 = color("#e9ecef"), Parent = care.layer })
+	Kit.corner(level, 8)
+	local milk = make("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 1), BackgroundColor3 = color("#fffdf5"), BorderSizePixel = 0, Parent = level })
+	Kit.corner(milk, 8)
+	make("TextLabel", { Position = UDim2.fromOffset(10, 244), Size = UDim2.fromOffset(46, 30), BackgroundTransparency = 1, Text = "🍼", TextSize = 26, Parent = care.layer })
+	local drink = make("TextLabel", { Position = UDim2.fromOffset(mx - 40, my - 70), Size = UDim2.fromOffset(80, 24), BackgroundTransparency = 1, Text = "", Font = Kit.BOLD, TextSize = 16, TextColor3 = color("#e64980"), Parent = care.layer })
+	local left, t, done = 1, 0, false
+	local g = { score = 1, cursor = "🍼" }
+	g.button = function() if done then MG.closeCare(true) end end
+	g.step = function(dt)
+		t += dt
+		-- жеребёнок покачивает головой
+		local cx, cy = mx + math.sin(t * 1.3) * 22, my + math.sin(t * 2.1) * 12
+		ring.Position = UDim2.fromOffset(cx, cy)
+		if done then return end
+		local p = care.ptr
+		local at = p and pointerDown and (Vector2.new(p.X, p.Y) - Vector2.new(cx, cy)).Magnitude < 42
+		ring.BackgroundColor3 = at and color("#ffdeeb") or color("#ffffff")
+		drink.Text = at and "чмок-чмок!" or ""
+		if at then
+			left = math.max(0, left - dt * 0.22)
+		elseif pointerDown and p then
+			g.score = math.max(0.4, g.score - dt * 0.05) -- пролил немного
+		end
+		milk.Size = UDim2.fromScale(1, left)
+		setProgress(1 - left)
+		if left <= 0 then
+			done = true
+			setButton("✨ Готово! Жеребёнок всё выпил")
+			care.hint.Text = "Умница! Жеребёнок сыт и счастлив 💕"
+		end
+	end
+	return { title = "🍼 Напоить: " .. h.name, hint = "Зажми кнопку мыши (или палец) и держи бутылочку у мордочки жеребёнка — в розовом кружке", game = g }
+end
+
 function MG.openCare(d)
 	local h = State.byId(d.id)
 	if not h then return end
 	care.kind, care.id = d.kind, d.id
 	for _, c in ipairs(care.layer:GetChildren()) do c:Destroy() end
 	pcall(HB.portrait, care.vpf, Horses.look(h))
-	local def = d.kind == "brush" and brushGame(h) or d.kind == "wash" and washGame(h) or shoeGame(h)
+	local def = d.kind == "brush" and brushGame(h) or d.kind == "wash" and washGame(h) or d.kind == "milk" and milkGame(h) or shoeGame(h)
 	care.game = def.game
 	care.title.Text = def.title
 	care.hint.Text = def.hint
@@ -272,7 +326,6 @@ function MG.careButton()
 	if care.game and care.game.button then care.game.button() end
 end
 
-local pointerDown = false
 local function areaPoint(screen)
 	local a = care.area
 	local scale = care.box.Scale.Scale
@@ -284,6 +337,7 @@ local function onPointer(screen)
 	local p = areaPoint(screen)
 	care.cursor.Position = UDim2.fromOffset(p.X, p.Y)
 	care.cursor.Text = care.game.cursor or ""
+	care.ptr = p
 	if pointerDown and care.game.move and p.X >= 0 and p.Y >= 0 and p.X <= AREA_W and p.Y <= AREA_H then care.game.move(p) end
 end
 
@@ -293,7 +347,7 @@ local function buildBirth()
 	local shade, box = overlay("Birth")
 	birth.shade, birth.box = shade, box
 	Kit.text(box, "<b>🍼 Рождается жеребёнок!</b>", { size = 22, center = true })
-	birth.vpf = make("ViewportFrame", { Size = UDim2.fromOffset(560, 300), BackgroundColor3 = color("#d8eec0"), LayoutOrder = Kit.nextOrder(), Parent = box })
+	birth.vpf = make("ViewportFrame", { Size = UDim2.fromOffset(560, 300), BackgroundColor3 = color("#4a3524"), LayoutOrder = Kit.nextOrder(), Parent = box })
 	Kit.corner(birth.vpf, 10)
 	birth.text = Kit.text(box, "", { center = true, size = 16 })
 	birth.ok = Kit.button(Kit.row(box, { center = true }), "Ура! 💕", function()
@@ -354,11 +408,41 @@ function MG.birth(d)
 		birth.vpf:ClearAllChildren()
 		local wm = Instance.new("WorldModel")
 		wm.Parent = birth.vpf
+		-- жеребёнок рождается в деннике конюшни: пол с соломой, дощатые стены, окно, кормушка, сено
+		local function sp(size, cf, c, mat, tr)
+			local p = Instance.new("Part")
+			p.Anchored = true
+			p.Size = size
+			p.CFrame = cf
+			p.Color = color(c)
+			p.Material = mat or Enum.Material.SmoothPlastic
+			if tr then p.Transparency = tr end
+			p.Parent = wm
+			return p
+		end
+		local WP = Enum.Material.WoodPlanks
+		sp(Vector3.new(34, 0.4, 18), CFrame.new(0, -0.2, 0), "#bfae92", Enum.Material.Slate)
+		for i = 1, 14 do
+			sp(Vector3.new(3 + math.random() * 3, 0.12, 1.2 + math.random()), CFrame.new(-12 + math.random() * 24, 0.06, -6 + math.random() * 11) * CFrame.Angles(0, math.random() * 3, 0), "#e6c96b", Enum.Material.Fabric)
+		end
+		sp(Vector3.new(34, 16, 0.5), CFrame.new(0, 8, -7), "#b07a45", WP)
+		for _, x in ipairs({ -13, 13 }) do sp(Vector3.new(0.5, 7, 18), CFrame.new(x, 3.5, 0), "#8a5a32", WP) end
+		for x = -12, 12, 6 do sp(Vector3.new(0.5, 16, 0.4), CFrame.new(x, 8, -6.7), "#5c3d1e", Enum.Material.Wood) end
+		sp(Vector3.new(5, 3.6, 0.3), CFrame.new(6, 9.5, -6.7), "#fff3d0", Enum.Material.Neon)
+		sp(Vector3.new(0.25, 3.6, 0.35), CFrame.new(6, 9.5, -6.6), "#f8f4ec", Enum.Material.Wood)
+		sp(Vector3.new(5, 0.25, 0.35), CFrame.new(6, 9.5, -6.6), "#f8f4ec", Enum.Material.Wood)
+		sp(Vector3.new(4, 1.4, 1.6), CFrame.new(-9, 3, -6), "#5c3d1e", Enum.Material.Wood)
+		sp(Vector3.new(3.6, 0.6, 1.2), CFrame.new(-9, 3.9, -6), "#d9b45a", Enum.Material.Grass)
+		sp(Vector3.new(4, 2.4, 2.6), CFrame.new(10, 1.2, -4.5) * CFrame.Angles(0, 0.3, 0), "#e0c25e", Enum.Material.Grass)
+		sp(Vector3.new(1.4, 1.4, 1.4), CFrame.new(-11, 0.7, 3), "#adb5bd", Enum.Material.Metal).Shape = Enum.PartType.Cylinder
 		local cam = Instance.new("Camera")
 		cam.FieldOfView = 40
 		cam.CFrame = CFrame.lookAt(Vector3.new(2, 6, 22), Vector3.new(0, 3, 0))
 		cam.Parent = birth.vpf
 		birth.vpf.CurrentCamera = cam
+		birth.vpf.Ambient = Color3.fromRGB(185, 165, 140)
+		birth.vpf.LightColor = Color3.fromRGB(255, 236, 200)
+		birth.vpf.LightDirection = Vector3.new(0.4, -1, 0.6)
 		local me = mare and HB.build(Horses.look(mare)) or nil
 		local fe = HB.build(Horses.look(foal))
 		if me then me.model.Parent = wm end
