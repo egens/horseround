@@ -95,7 +95,7 @@ local measureGround
 local function setColors()
 	local colors = {
 		{ M.LeafyGrass, "#4f8a3a" }, { M.Salt, "#9b87c9" }, { M.Sand, "#e8cf8f" }, { M.Snow, "#f4f8fb" },
-		{ M.Rock, "#8a8580" }, { M.Slate, "#4a4744" }, { M.Basalt, "#3b3436" }, { M.Ground, "#b9a35f" }, { M.Mud, "#b08d5c" },
+		{ M.Rock, "#8a8580" }, { M.Slate, "#4a4744" }, { M.Basalt, "#3b3436" }, { M.Ground, "#b9a35f" }, { M.Mud, "#8a6238" },
 		{ M.Sandstone, "#7a3b2e" }, { M.Cobblestone, "#b8a98f" }, { M.Glacier, "#cfe9ff" }, { M.CrackedLava, "#ff6a00" },
 	}
 	for _, c in ipairs(colors) do
@@ -109,27 +109,134 @@ local function setColors()
 	end
 end
 
+-- клетки дорог (тропинок) на сетке 4 стада: ключ "i|j" → true
+local function roadCells(VS)
+	local set = {}
+	local HALF = 38 -- полуширина тропинки, пикс. (≈7.5 стада в ширину)
+	for _, r in ipairs(World.ROADS) do
+		for i = 1, #r - 1 do
+			local ax, ay, bx, by = r[i][1], r[i][2], r[i + 1][1], r[i + 1][2]
+			local len = Util.hypot(bx - ax, by - ay)
+			local n = math.max(1, math.ceil(len / 15))
+			for k = 0, n do
+				local t = k / n
+				local x, y = ax + (bx - ax) * t, ay + (by - ay) * t
+				local i0, i1 = math.floor((x - HALF) * K / VS), math.floor((x + HALF) * K / VS)
+				local j0, j1 = math.floor((y - HALF) * K / VS), math.floor((y + HALF) * K / VS)
+				for ii = i0, i1 do
+					for jj = j0, j1 do
+						local cx, cy = (ii + 0.5) * VS / K, (jj + 0.5) * VS / K
+						if Util.hypot(cx - x, cy - y) < HALF then set[ii .. "|" .. jj] = true end
+					end
+				end
+			end
+		end
+	end
+	return set
+end
+
+-- Рельеф одной записью вокселей: холмы по карте высот World.heightAt, озёра с пологим дном
+-- (в них можно зайти и поплавать), тропинки, горы за краями земли.
+local function buildLand()
+	local VS = 4
+	local EXT = World.RELIEF_EXT
+	local Y0, NY = -16, 40 -- от -16 до 144 стад
+	local i0 = math.floor(-EXT * K / VS)
+	local i1 = math.ceil((World.W + EXT) * K / VS)
+	local j0 = math.floor(-EXT * K / VS)
+	local j1 = math.ceil((World.H + 1300) * K / VS)
+	local roads = roadCells(VS)
+	local CH = 32
+	local LW = World.LAKE_WATER
+	local function columnInfo(ii, jj)
+		local x, y = (ii + 0.5) * VS / K, (jj + 0.5) * VS / K
+		local g, mat, water = 0, nil, nil
+		local L = World.lakeAt(x, y, 30)
+		if y > World.H then
+			g = World.ridge(x, y)
+			mat = M.Rock
+		else
+			g = World.heightAt(x, y)
+			local reg = World.regionCoarse(x, y)
+			mat = reg == "edge" and M.Rock or GROUND[reg] or M.Grass
+			if x > World.W then
+				mat = g < -1 and M.Sand or M.Rock
+				if g < -2 then water = -2 end
+			end
+		end
+		if g > 90 then mat = M.Snow end
+		local inside = L and World.inBlob(L, x, y)
+		if L and (L.lava or L.ice) and not inside then L = nil end
+		if L then
+			if L.lava then mat = M.CrackedLava; g = 0
+			elseif L.ice then mat = M.Glacier; g = 0
+			else
+				mat = M.Sand -- дно и песчаная кайма у берега
+				if inside then water = LW end
+			end
+		elseif roads[ii .. "|" .. jj] and y <= World.H then
+			mat = M.Mud
+		end
+		return g, mat, water
+	end
+	for ci = i0, i1, CH do
+		for cj = j0, j1, CH do
+			local ni, nj = math.min(CH, i1 - ci + 1), math.min(CH, j1 - cj + 1)
+			-- высоты с запасом в 1 клетку — для крутизны склонов
+			local hs, ms, ws = {}, {}, {}
+			for a = 0, ni + 1 do
+				hs[a], ms[a], ws[a] = {}, {}, {}
+				for b = 0, nj + 1 do
+					local g, mt, w = columnInfo(ci + a - 1, cj + b - 1)
+					hs[a][b], ms[a][b], ws[a][b] = math.min(g, 140), mt, w
+				end
+			end
+			local mats, occs = {}, {}
+			for a = 1, ni do
+				local mx, ox = {}, {}
+				mats[a], occs[a] = mx, ox
+				for k = 1, NY do
+					mx[k], ox[k] = {}, {}
+				end
+				for b = 1, nj do
+					local g, mt, w = hs[a][b], ms[a][b], ws[a][b]
+					local slope = math.max(math.abs(hs[a + 1][b] - hs[a - 1][b]), math.abs(hs[a][b + 1] - hs[a][b - 1])) / (2 * VS)
+					if slope > 1.0 and not w and mt ~= M.Snow and mt ~= M.Mud and mt ~= M.CrackedLava and mt ~= M.Glacier then
+						mt = (mt == M.Sand or mt == M.Sandstone) and M.Sandstone or M.Rock
+					end
+					for k = 1, NY do
+						local y0 = Y0 + (k - 1) * VS
+						local occ = math.clamp((g - y0) / VS, 0, 1)
+						local m = mt
+						if occ < 0.35 and w and w > y0 then
+							m = M.Water
+							occ = math.clamp((w - y0) / VS, 0, 1)
+						end
+						if occ <= 0.02 then
+							m = M.Air
+							occ = 0
+						end
+						mx[k][b], ox[k][b] = m, occ
+					end
+				end
+			end
+			local lo = Vector3.new(ci * VS, Y0, cj * VS)
+			local hi = lo + Vector3.new(ni * VS, NY * VS, nj * VS)
+			local ok, err = pcall(function() T:WriteVoxels(Region3.new(lo, hi), VS, mats, occs) end)
+			if not ok then warn("[HorseFarm] рельеф: " .. tostring(err)) end
+			task.wait()
+		end
+	end
+end
+
 local function buildTerrain()
 	setColors()
 	local W, H = World.W, World.H
-	local step = 160
-	-- суша по биомам
-	for x = 0, W - 1, step do
-		for y = 0, H - 1, step do
-			local cx, cy = x + step / 2, y + step / 2
-			local reg = World.regionAt(cx, cy)
-			-- море и острова — точнее ниже
-			local island = string.sub(reg, 1, 1) == "i" and #reg == 2
-			if reg ~= "sea" and not island then
-				T:FillBlock(CFrame.new(cx * K, -6, cy * K), Vector3.new(step * K, 12, step * K), GROUND[reg] or M.Grass)
-			end
-			yieldSome()
-		end
-	end
+	buildLand()
+	local c8 = 80
 	-- Вода в Roblox (с «береговой линией») может жить в одной клетке вместе с землёй: если залить
-	-- воду поверх земли или землю поверх воды, вода остаётся сверху. Из-за этого озёр не было видно
-	-- (вода пряталась в земле), а острова стояли под водой. Поэтому сначала вырезаем место (Air),
-	-- потом заливаем. Уровень воды — на 2 стада ниже земли, чтобы берега и острова были над водой.
+	-- воду поверх земли или землю поверх воды, вода остаётся сверху. Поэтому сначала вырезаем место (Air),
+	-- потом заливаем. Уровень моря — на 2 стада ниже земли, чтобы берега и острова были над водой.
 	local WATER_TOP = -2
 	-- море: полосами от берега, потом острова клетками помельче
 	local ystep = 80
@@ -142,7 +249,6 @@ local function buildTerrain()
 		T:FillBlock(CFrame.new(cxx, (-12 + WATER_TOP) / 2, cz), Vector3.new(sx, WATER_TOP + 12, sz), M.Water)
 		yieldSome()
 	end
-	local c8 = 80
 	for _, I in ipairs(World.ISLANDS) do
 		local mat = I.bone and M.Sandstone or M.Grass
 		for x = I.x - I.rx * 1.3, I.x + I.rx * 1.3, c8 do
@@ -155,40 +261,6 @@ local function buildTerrain()
 				end
 				yieldSome()
 			end
-		end
-	end
-	-- озёра
-	for _, L in ipairs(World.LAKES) do
-		for x = L.x - L.rx * 1.4, L.x + L.rx * 1.4, c8 / 2 do
-			for y = L.y - L.ry * 1.4, L.y + L.ry * 1.4, c8 / 2 do
-				if World.inBlob(L, x, y) then
-					local cf = CFrame.new(x * K, -4.5, y * K)
-					local size = Vector3.new(c8 / 2 * K, 7, c8 / 2 * K)
-					if L.lava then
-						T:FillBlock(CFrame.new(x * K, -2, y * K), Vector3.new(c8 / 2 * K, 4, c8 / 2 * K), M.CrackedLava)
-					elseif L.ice then
-						T:FillBlock(CFrame.new(x * K, -2, y * K), Vector3.new(c8 / 2 * K, 4, c8 / 2 * K), M.Glacier)
-					else
-						-- ямка, дно из песка и вода чуть ниже берега
-						T:FillBlock(CFrame.new(x * K, -2, y * K), Vector3.new(c8 / 2 * K, 12, c8 / 2 * K), M.Air)
-						T:FillBlock(CFrame.new(x * K, -9, y * K), Vector3.new(c8 / 2 * K, 2, c8 / 2 * K), M.Sand)
-						T:FillBlock(cf, size, M.Water)
-					end
-				end
-				yieldSome()
-			end
-		end
-	end
-	-- дороги
-	for _, r in ipairs(World.ROADS) do
-		for i = 1, #r - 1 do
-			local a = Vector3.new(r[i][1] * K, -2, r[i][2] * K)
-			local b = Vector3.new(r[i + 1][1] * K, -2, r[i + 1][2] * K)
-			local len = (b - a).Magnitude
-			if len > 0.1 then
-				T:FillBlock(CFrame.lookAt((a + b) / 2, b), Vector3.new(6, 4, len + 3), M.Mud)
-			end
-			yieldSome()
 		end
 	end
 	-- манеж — песок, площадь деревни — брусчатка
@@ -248,7 +320,9 @@ local function buildBarriers()
 			p.CastShadow = false
 		end
 	end
+	-- в обычные озёра можно зайти и поплавать; стенка только у лавы
 	for _, L in ipairs(World.LAKES) do
+		if not L.lava then continue end
 		local pts = World.blobPoly(L, 6, 40)
 		for i = 1, #pts do
 			local a, b = pts[i], pts[i % #pts + 1]
@@ -276,7 +350,7 @@ local function buildBarriers()
 	wall(0, 0, W, 0, 80)
 	wall(0, 0, 0, H, 80)
 	wall(W, 0, W, H, 80)
-	wall(0, H, W, H, 14)
+	wall(0, H, W, H, 40) -- за южными горами — небо; перелететь можно сверху
 	-- небесные острова: невидимые перила по краю (мосты остаются открытыми)
 	for _, I in ipairs(World.SKY_ISLANDS) do
 		local pts = World.blobPoly(I, -8, 56)
@@ -347,16 +421,73 @@ local function roofOver(r, y, color, overhang, rise)
 	return m
 end
 
+-- плиточный пол: плитки двух оттенков с тёмными швами между ними
+local TILE = M.Slate
+pcall(function() TILE = Enum.Material.CeramicTiles end)
+local function tileFloor(r, parent, inset)
+	inset = inset or 10
+	local x0, z0 = (r.x + inset) * K, (r.y + inset) * K
+	local w, d = (r.w - inset * 2) * K, (r.h - inset * 2) * K
+	-- шов (подложка)
+	part({ size = Vector3.new(w, 0.1, d), cframe = CFrame.new(x0 + w / 2, 0.05, z0 + d / 2), color = "#7d7368", material = M.Concrete, parent = parent })
+	local S = 3
+	local nx, nz = math.floor(w / S), math.floor(d / S)
+	local sx, sz = w / nx, d / nz
+	for i = 0, nx - 1 do
+		for j = 0, nz - 1 do
+			local c = (i + j) % 2 == 0 and "#d9cbb3" or "#bfae92"
+			local t = part({ size = Vector3.new(sx - 0.14, 0.14, sz - 0.14), cframe = CFrame.new(x0 + (i + 0.5) * sx, 0.12, z0 + (j + 0.5) * sz), color = c, material = TILE, parent = parent })
+			t.CastShadow = false
+			yieldSome()
+		end
+	end
+end
+
+-- фонарь как настоящий: каменное основание, чугунный столб с кольцами, кронштейн,
+-- фонарь-коробка со стёклами, крышей-шатром и шишечкой, внутри — лампа (горит ночью)
+local IRON = "#22262b"
 local function lamp(x, y, parent)
-	local base = Vector3.new(x * K, 0, y * K)
-	part({ size = Vector3.new(0.5, 7, 0.5), cframe = CFrame.new(base + Vector3.new(0, 3.5, 0)), color = "#2b2b2b", material = M.Metal, parent = parent })
-	local bulb = part({ size = Vector3.new(1.2, 1.2, 1.2), cframe = CFrame.new(base + Vector3.new(0, 7.4, 0)), color = "#ffe9a8", material = M.SmoothPlastic, parent = parent, collide = false })
+	local base = CFrame.new(x * K, 0, y * K)
+	local m = Instance.new("Model")
+	m.Name = "Lamp"
+	m.Parent = parent
+	part({ size = Vector3.new(1.4, 0.5, 1.4), cframe = base * CFrame.new(0, 0.25, 0), color = "#8d8476", material = M.Cobblestone, parent = m })
+	part({ size = Vector3.new(0.9, 0.8, 0.9), cframe = base * CFrame.new(0, 0.9, 0), color = IRON, material = M.Metal, parent = m })
+	part({ size = Vector3.new(7.2, 0.38, 0.38), cframe = base * CFrame.new(0, 4.7, 0) * CFrame.Angles(0, 0, math.pi / 2), color = IRON, material = M.Metal, shape = Enum.PartType.Cylinder, parent = m })
+	for _, yy in ipairs({ 1.5, 4.2, 7.9 }) do
+		part({ size = Vector3.new(0.18, 0.62, 0.62), cframe = base * CFrame.new(0, yy, 0) * CFrame.Angles(0, 0, math.pi / 2), color = IRON, material = M.Metal, shape = Enum.PartType.Cylinder, parent = m, collide = false })
+	end
+	-- фонарь на вершине
+	local top = base * CFrame.new(0, 8.25, 0)
+	part({ size = Vector3.new(1.3, 0.15, 1.3), cframe = top, color = IRON, material = M.Metal, parent = m, collide = false })
+	for _, sx in ipairs({ -1, 1 }) do
+		for _, sz in ipairs({ -1, 1 }) do
+			part({ size = Vector3.new(0.1, 1.5, 0.1), cframe = top * CFrame.new(sx * 0.58, 0.8, sz * 0.58), color = IRON, material = M.Metal, parent = m, collide = false })
+		end
+	end
+	local glass = part({ size = Vector3.new(1.08, 1.4, 1.08), cframe = top * CFrame.new(0, 0.78, 0), color = "#fff4d6", material = M.Glass, parent = m, collide = false, transparency = 0.55 })
+	glass.CastShadow = false
+	local bulb = part({ size = Vector3.new(0.45, 0.65, 0.45), cframe = top * CFrame.new(0, 0.72, 0), color = "#ffe9a8", material = M.SmoothPlastic, parent = m, collide = false })
+	bulb.CastShadow = false
 	bulb.Name = "LampBulb"
+	part({ size = Vector3.new(1.5, 0.14, 1.5), cframe = top * CFrame.new(0, 1.57, 0), color = IRON, material = M.Metal, parent = m, collide = false })
+	-- крыша-шатёр из четырёх клиньев
+	for k = 0, 3 do
+		local w = Instance.new("WedgePart")
+		w.Anchored = true
+		w.CanCollide = false
+		w.Size = Vector3.new(1.5, 0.55, 0.75)
+		w.Color = col(IRON)
+		w.Material = M.Metal
+		w.CFrame = CFrame.new(0, World.GROUND, 0) * top * CFrame.new(0, 1.92, 0) * CFrame.Angles(0, k * math.pi / 2, 0) * CFrame.new(0, 0, -0.375)
+		w.Parent = m
+	end
+	part({ size = Vector3.new(0.25, 0.25, 0.25), cframe = top * CFrame.new(0, 2.3, 0), color = IRON, material = M.Metal, shape = Enum.PartType.Ball, parent = m, collide = false })
 	local light = Instance.new("PointLight")
-	light.Range = 34
-	light.Brightness = 2
-	light.Color = col("#ffd88a")
-	light.Shadows = false
+	light.Range = 30
+	light.Brightness = 1.6
+	light.Color = col("#ffcf7a")
+	light.Shadows = true
 	light.Enabled = false
 	light.Parent = bulb
 	table.insert(lamps, bulb)
@@ -375,6 +506,7 @@ local function buildFarm()
 		if s.kind == "stable" and s.x < World.SEA.x - 400 then rectBox(s, 0, 18, "#c8a27a", M.WoodPlanks, true, f) end
 	end
 	roofOver(S, 18, "#a33a2a", 1.5).Parent = f
+	tileFloor(S, f)
 	for i = 0, 19 do
 		local r = World.stallRect(i)
 		if i % 10 ~= 0 then
@@ -496,11 +628,107 @@ local function house(hh, parent)
 	if hh.name then label(hh.name, r.x + r.w / 2, r.y - 10, 24, "#3b2a1a", 220, 18) end
 end
 
+-- заборы участков: штакетник у домов, жердяной забор у огородов (отрезки из World.FENCES)
+local function buildFences(parent)
+	local f = Instance.new("Folder")
+	f.Name = "Fences"
+	f.Parent = parent
+	for _, q in ipairs(World.FENCES) do
+		local a = Vector3.new(q[1] * K, 0, q[2] * K)
+		local b = Vector3.new(q[3] * K, 0, q[4] * K)
+		local len = (b - a).Magnitude
+		local cf = CFrame.lookAt((a + b) / 2, b)
+		if q.kind == "picket" then
+			for _, yy in ipairs({ 0.9, 2.1 }) do
+				part({ size = Vector3.new(0.12, 0.28, len), cframe = cf * CFrame.new(0, yy, 0), color = "#f1ece2", material = M.Wood, parent = f, collide = false })
+			end
+			local n = math.max(1, math.floor(len / 0.8))
+			for i = 0, n - 1 do
+				local z = -len / 2 + (i + 0.5) * len / n
+				part({ size = Vector3.new(0.14, 2.7, 0.45), cframe = cf * CFrame.new(0.12, 1.35, z), color = "#fbf8f1", material = M.Wood, parent = f, collide = false })
+				local tip = Instance.new("WedgePart")
+				tip.Anchored = true
+				tip.CanCollide = false
+				tip.Size = Vector3.new(0.14, 0.3, 0.45)
+				tip.Color = col("#fbf8f1")
+				tip.Material = M.Wood
+				tip.CFrame = CFrame.new(0, World.GROUND, 0) * cf * CFrame.new(0.12, 2.85, z)
+				tip.Parent = f
+			end
+			part({ size = Vector3.new(0.35, 3, 0.35), cframe = cf * CFrame.new(0, 1.5, -len / 2), color = "#d8d0c2", material = M.Wood, parent = f, collide = false })
+		else
+			for _, yy in ipairs({ 1.0, 2.0 }) do
+				part({ size = Vector3.new(0.3, 0.3, len), cframe = cf * CFrame.new(0, yy, 0), color = WOOD, material = M.Wood, parent = f, collide = false })
+			end
+			part({ size = Vector3.new(0.45, 2.6, 0.45), cframe = cf * CFrame.new(0, 1.3, -len / 2), color = DARKWOOD, material = M.Wood, parent = f, collide = false })
+		end
+		-- невидимая стенка, чтобы не перелезть (калитка и дорога — открыты)
+		local inv = part({ size = Vector3.new(0.6, 5, len + 0.3), cframe = cf * CFrame.new(0, 2.5, 0), transparency = 1, parent = f })
+		inv.CastShadow = false
+		inv.CanQuery = false
+		yieldSome()
+	end
+end
+
+-- огороды: грядки с рыхлой землёй и овощами
+local CROP = {
+	cabbage = { "#8fce6a", "#5fa04a", 0.9, 0.7, true }, carrot = { "#4caf50", "#ff922b", 0.35, 0.8, false },
+	pumpkin = { "#3f8f3a", "#f08c00", 1.1, 0.8, true }, corn = { "#6aa84f", "#f2c94c", 0.35, 2.6, false },
+	potato = { "#5c9e3e", "#8bb85a", 0.6, 0.6, true },
+}
+local function buildPlots(parent)
+	local f = Instance.new("Folder")
+	f.Name = "Plots"
+	f.Parent = parent
+	for k, r in ipairs(World.PLOTS) do
+		local c = CROP[r.crop] or CROP.cabbage
+		local rnd = Util.rng(900 + k)
+		local rows = math.floor((r.h - 50) / 34)
+		for j = 0, rows - 1 do
+			local y = r.y + 30 + j * 34
+			local x1, x2 = r.x + 30, r.x + r.w - 30
+			part({ size = Vector3.new((x2 - x1) * K, 0.35, 1.8), cframe = CFrame.new((x1 + x2) / 2 * K, 0.15, y * K), color = "#6b4a2b", material = M.Ground, parent = f, collide = false, shadow = false })
+			local x = x1 + 10
+			while x < x2 - 6 do
+				local cf = CFrame.new(x * K, 0.3, y * K) * CFrame.Angles(0, rnd() * 6, 0)
+				if r.crop == "corn" then
+					part({ size = Vector3.new(0.16, c[4], 0.16), cframe = cf * CFrame.new(0, c[4] / 2, 0), color = c[1], material = M.Grass, parent = f, collide = false })
+					part({ size = Vector3.new(0.9, 0.08, 0.25), cframe = cf * CFrame.new(0.3, c[4] * 0.6, 0) * CFrame.Angles(0, 0, -0.5), color = c[1], material = M.Grass, parent = f, collide = false, shadow = false })
+					part({ size = Vector3.new(0.22, 0.55, 0.22), cframe = cf * CFrame.new(-0.12, c[4] * 0.55, 0), color = c[2], parent = f, collide = false, shadow = false })
+				elseif c[5] then
+					part({ size = Vector3.new(c[3], c[3] * 0.75, c[3]), cframe = cf * CFrame.new(0, c[3] * 0.35, 0), color = c[2], material = r.crop == "pumpkin" and M.SmoothPlastic or M.Grass, shape = Enum.PartType.Ball, parent = f, collide = false, shadow = false })
+					part({ size = Vector3.new(c[3] * 1.3, 0.1, c[3] * 0.5), cframe = cf * CFrame.new(0, c[3] * 0.2, 0) * CFrame.Angles(0, 0.8, 0.25), color = c[1], material = M.Grass, parent = f, collide = false, shadow = false })
+				else
+					for i = 0, 2 do
+						part({ size = Vector3.new(0.08, c[4], 0.08), cframe = cf * CFrame.Angles(0, i * 2.1, 0.3) * CFrame.new(0, c[4] / 2, 0), color = c[1], material = M.Grass, parent = f, collide = false, shadow = false })
+					end
+					part({ size = Vector3.new(0.18, 0.12, 0.18), cframe = cf * CFrame.new(0, 0.02, 0), color = c[2], parent = f, collide = false, shadow = false })
+				end
+				x += r.crop == "pumpkin" and 30 or 16
+				yieldSome()
+			end
+		end
+		-- пугало в каждом втором огороде
+		if k % 2 == 1 then
+			local cx, cy = (r.x + r.w - 40) * K, (r.y + 40) * K
+			part({ size = Vector3.new(0.3, 4.2, 0.3), cframe = CFrame.new(cx, 2.1, cy), color = DARKWOOD, material = M.Wood, parent = f, collide = false })
+			part({ size = Vector3.new(3, 0.25, 0.25), cframe = CFrame.new(cx, 3.2, cy), color = DARKWOOD, material = M.Wood, parent = f, collide = false })
+			part({ size = Vector3.new(1.4, 1.4, 0.6), cframe = CFrame.new(cx, 3, cy), color = "#c92a2a", material = M.Fabric, parent = f, collide = false })
+			part({ size = Vector3.new(0.9, 0.9, 0.9), cframe = CFrame.new(cx, 4.3, cy), color = "#e9d8a6", material = M.Fabric, shape = Enum.PartType.Ball, parent = f, collide = false })
+			part({ size = Vector3.new(1.6, 0.12, 1.6), cframe = CFrame.new(cx, 4.72, cy), color = "#d4a017", material = M.Fabric, parent = f, collide = false })
+			part({ size = Vector3.new(0.8, 0.5, 0.8), cframe = CFrame.new(cx, 4.98, cy), color = "#d4a017", material = M.Fabric, parent = f, collide = false })
+		end
+	end
+	for _, r in ipairs(World.PLOTS) do label("🥕 Огород", r.x + r.w / 2, r.y - 10, 5, "#3b2a1a", 140, 16) end
+end
+
 local function buildVillage()
 	local f = Instance.new("Folder")
 	f.Name = "Village"
 	f.Parent = root
 	for _, hh in ipairs(World.HOUSES) do house(hh, f) end
+	buildFences(f)
+	buildPlots(f)
 	local W = World.WELL
 	local well = part({ size = Vector3.new(2.6, W.r * 2 * K, W.r * 2 * K), cframe = CFrame.new(W.x * K, 1.3, W.y * K) * CFrame.Angles(0, 0, math.pi / 2), color = "#8d8476", material = M.Cobblestone, shape = Enum.PartType.Cylinder, parent = f })
 	well.Name = "Well"
@@ -556,6 +784,7 @@ local function buildSeaside()
 			if s.kind == "stable" and World.inRect(s.x, s.y, I.stable, 5) then rectBox(s, 0, 16, "#c8a27a", M.WoodPlanks, true, f) end
 		end
 		roofOver(I.stable, 16, "#2f6f8f", 1).Parent = f
+		tileFloor(I.stable, f)
 		for k = 1, 4 do
 			part({ size = Vector3.new(0.4, 4, 12), cframe = CFrame.new((I.stable.x + k * 68) * K, 2, (I.stable.y + 70) * K), color = WOOD, parent = f })
 		end
@@ -654,9 +883,9 @@ end
 -- и верх может оказаться не на нуле. Берём медиану по нескольким ровным местам фермы.
 measureGround = function()
 	local pts = {
-		{ World.FIELD.x + World.FIELD.w / 2, World.FIELD.y + World.FIELD.h / 2 }, { World.START.x - 200, World.START.y },
+		-- только ровный двор фермы: на поле и в лесу теперь холмы
 		{ World.OX + 960, World.OY + 470 }, { World.PADDOCK.x + 200, World.PADDOCK.y + 200 }, { World.JUMPF.x + 300, World.JUMPF.y + 300 },
-		{ World.FARMLAND.x + 400, World.FARMLAND.y + 400 }, { World.FIELD.x + 300, World.FIELD.y + 1600 },
+		{ World.JUMPF.x + 900, World.JUMPF.y + 200 }, { World.PADDOCK.x + 400, World.PADDOCK.y + 300 },
 	}
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include

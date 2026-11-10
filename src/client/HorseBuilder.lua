@@ -33,6 +33,8 @@ local function newPart(size, cf, c, material, transparency)
 	return p
 end
 
+local slab -- брусок упряжи (ниже)
+
 --[[ жадное слияние кубиков в прямоугольники по слоям z ]]
 -- cells: { ["x|y|z"] = color }; offset — сдвиг всех кубиков (в кубиках); V — размер кубика
 local function addCells(cells, parent, weldTo, V, baseCF, material, transparency, list)
@@ -164,16 +166,33 @@ function HB.build(look, opts)
 	-- ноги
 	local legs = {}
 	local LP = { { 5, -1.5 }, { 5, 1.5 }, { -6, -1.5 }, { -6, 1.5 } }
+	-- нога из двух частей: верх (до колена / скакательного сустава) и низ с копытом
+	local KNEE_Y = -3
+	local function splitLeg(cells)
+		local up, lo = {}, {}
+		for k, c in pairs(cells) do
+			local _, y = HV.parse(k)
+			if y >= KNEE_Y then up[k] = c else lo[k] = c end
+		end
+		return up, lo
+	end
 	for i = 1, 4 do
 		local pos = Vector3.new(LP[i][1] * V, 7 * V, LP[i][2] * V)
 		local piv = pivotPart("Leg" .. i, origin * CFrame.new(pos), model)
 		local m = motor(content, piv, CFrame.new(pos))
+		local kOff = Vector3.new(0, KNEE_Y * V, 0)
+		local kpiv = pivotPart("Knee" .. i, origin * CFrame.new(pos + kOff), model)
+		local km = motor(piv, kpiv, CFrame.new(kOff))
 		local lc = HV.legCells(h, ph, i - 1)
 		local base = origin * CFrame.new(pos)
-		addCells(wetCopy(lc.cells, wl), model, piv, V, base, allGlow and NEON or PLASTIC)
-		addCells(lc.glow, model, piv, V, base, NEON)
-		if mag.cloud then addCells(HV.cloudCells(), model, piv, V, base, NEON, 0.1) end
-		legs[i] = { m = m, pos = pos }
+		local up, lo = splitLeg(wetCopy(lc.cells, wl))
+		local upG, loG = splitLeg(lc.glow)
+		addCells(up, model, piv, V, base, allGlow and NEON or PLASTIC)
+		addCells(upG, model, piv, V, base, NEON)
+		addCells(lo, model, kpiv, V, base, allGlow and NEON or PLASTIC)
+		addCells(loG, model, kpiv, V, base, NEON)
+		if mag.cloud then addCells(HV.cloudCells(), model, kpiv, V, base, NEON, 0.1) end
+		legs[i] = { m = m, pos = pos, km = km, kOff = kOff, kp = kpiv, r = 0, k = 0, front = i <= 2 }
 	end
 	-- хвост
 	local TP = Vector3.new(-8 * V, 12.5 * V, 0.5 * V)
@@ -229,7 +248,17 @@ function HB.build(look, opts)
 		earsM = earsM, EP = EP, legs = legs, tailM = tailM, TP = TP, wings = wings, ph = ph, s = s, seed = h.seed,
 		cloud = mag.cloud, V = V, moveS = 0,
 	}
-	if opts.tack then HB.addBridle(e, opts.tack) end
+	if opts.tack then
+		HB.addSaddle(e, opts.tack)
+		HB.addBridle(e, opts.tack)
+		-- ногавки на нижней части ног
+		if opts.tack.boots then
+			for _, l in ipairs(e.legs) do
+				slab(e, l.kp, { 0, -2.1, 0 }, { 2.2, 2.0, 2.2 }, opts.tack.boots, Enum.Material.Fabric)
+				slab(e, l.kp, { 0, -1.12, 0 }, { 2.28, 0.18, 2.28 }, Util.mix(opts.tack.boots, "#ffffff", 0.4), Enum.Material.Fabric)
+			end
+		end
+	end
 	if opts.anchored then
 		for _, d in ipairs(model:GetDescendants()) do
 			if d:IsA("BasePart") then d.Anchored = true end
@@ -276,6 +305,102 @@ local function knob(e, base, at, d, c, material, shape)
 	return p
 end
 
+-- брусок в координатах кубиков: центр c, размер sz, поворот rz (вокруг оси Z — наклон вперёд/назад)
+slab = function(e, base, c, sz, col, material, rz, rx, shape, ry)
+	local V = e.V
+	local p = newPart(Vector3.new(sz[1] * V, sz[2] * V, sz[3] * V), base.CFrame * CFrame.new(c[1] * V, c[2] * V, c[3] * V) * CFrame.Angles(rx or 0, ry or 0, rz or 0), col, material or LEATHER)
+	if shape then p.Shape = shape end
+	p.CastShadow = false
+	p.Parent = e.model
+	local w = Instance.new("WeldConstraint")
+	w.Part0 = base
+	w.Part1 = p
+	w.Parent = p
+	return p
+end
+
+-- седло как настоящее (английское): вальтрап с кантом, сиденье с подушками, высокая задняя лука,
+-- передняя лука, крылья с наколенниками, подпруга с пряжками, путлища и стремена.
+-- Спина лошади — на высоте 13 кубиков, бока — z = ±3, живот — y = 7.
+function HB.addSaddle(e, R)
+	local C = e.content
+	local sc = R.saddleColor or "#5b3a1e"
+	local dark = Util.mix(sc, "#000000", 0.28)
+	local light = Util.mix(sc, "#ffffff", 0.18)
+	local pad = R.pad or "#7a6a55"
+	local trim = Util.mix(pad, "#ffffff", 0.45)
+	local METAL = Enum.Material.Metal
+	local steel = "#ced4da"
+	local FAB = Enum.Material.Fabric
+	-- вальтрап: сверху на спине и по бокам, внизу кант
+	slab(e, C, { -1.2, 13.07, 0 }, { 7.4, 0.14, 6.25 }, pad, FAB)
+	for _, z in ipairs({ -1, 1 }) do
+		slab(e, C, { -1.2, 11.55, 3.09 * z }, { 7.4, 3.0, 0.14 }, pad, FAB)
+		slab(e, C, { -1.2, 10.07, 3.12 * z }, { 7.5, 0.16, 0.12 }, trim, FAB)
+		slab(e, C, { 2.5, 11.55, 3.12 * z }, { 0.14, 3.1, 0.12 }, trim, FAB)
+		slab(e, C, { -4.9, 11.55, 3.12 * z }, { 0.14, 3.1, 0.12 }, trim, FAB)
+	end
+	-- подушки под сиденьем и само сиденье
+	for _, z in ipairs({ -1, 1 }) do slab(e, C, { -1.3, 13.27, 1.15 * z }, { 5.6, 0.3, 1.5 }, dark) end
+	slab(e, C, { -1.4, 13.5, 0 }, { 4.2, 0.28, 3.1 }, sc)
+	-- задняя лука: поднимается назад, сверху закруглённый край
+	slab(e, C, { -3.75, 13.85, 0 }, { 0.6, 0.95, 3.0 }, sc, nil, -0.45)
+	slab(e, C, { -4.05, 14.3, 0 }, { 3.0, 0.5, 0.5 }, light, nil, 0, 0, Enum.PartType.Cylinder, math.pi / 2)
+	-- передняя лука и её «горбик»
+	slab(e, C, { 1.2, 13.75, 0 }, { 0.6, 0.8, 2.5 }, sc, nil, 0.4)
+	slab(e, C, { 1.45, 14.05, 0 }, { 0.7, 0.4, 1.4 }, light, nil, 0.4)
+	for _, z in ipairs({ -1, 1 }) do
+		-- крыло седла (защищает ногу всадника) и наколенник спереди
+		slab(e, C, { -0.5, 11.8, 3.26 * z }, { 3.5, 3.1, 0.12 }, sc, nil, 0.12)
+		slab(e, C, { 1.05, 12.0, 3.34 * z }, { 0.5, 2.4, 0.14 }, dark, nil, 0.12)
+		-- полочка седла над крылом
+		slab(e, C, { -1.4, 13.18, 1.95 * z }, { 4.6, 0.22, 0.9 }, sc, nil, 0, 0.35 * z)
+		-- подпруга: от крыла вниз под живот, пряжки
+		slab(e, C, { 0.9, 8.75, 3.06 * z }, { 0.75, 2.7, 0.08 }, dark)
+		slab(e, C, { 0.9, 10.05, 3.36 * z }, { 0.55, 0.38, 0.06 }, steel, METAL)
+		-- путлище и стремя
+		local sx = 0.1
+		slab(e, C, { sx, 11.2, 3.42 * z }, { 0.26, 4.4, 0.06 }, dark)
+		slab(e, C, { sx, 9.02, 3.48 * z }, { 0.9, 0.12, 0.12 }, steel, METAL)
+		for _, dx in ipairs({ -0.42, 0.42 }) do slab(e, C, { sx + dx, 8.55, 3.48 * z }, { 0.1, 0.95, 0.12 }, steel, METAL) end
+		slab(e, C, { sx, 8.08, 3.48 * z }, { 0.95, 0.12, 0.55 }, steel, METAL)
+	end
+	slab(e, C, { 0.9, 6.95, 0 }, { 0.75, 0.1, 6.2 }, dark)
+	-- украшения по стилю
+	local st = R.saddleStyle or "classic"
+	local function deco(list, material, shape)
+		for _, q in ipairs(list) do
+			local p = slab(e, C, { q[1], q[2], q[3] }, { q[5] or 0.5, q[5] or 0.5, q[5] or 0.5 }, q[4], material, 0, 0, shape)
+			p.CastShadow = false
+		end
+	end
+	if st == "crystal" then
+		deco({ { 1.5, 14.35, -0.5, "#74c0fc" }, { 1.5, 14.35, 0.5, "#f783ac" }, { -4.1, 14.7, -0.9, "#b197fc" }, { -4.1, 14.7, 0.9, "#63e6be" },
+			{ -4.9, 10.1, -3.2, "#74c0fc" }, { 2.5, 10.1, -3.2, "#f783ac" }, { -4.9, 10.1, 3.2, "#63e6be" }, { 2.5, 10.1, 3.2, "#b197fc" } }, NEON)
+	elseif st == "plant" then
+		local list = {}
+		for x = -4.6, 2.2, 0.9 do
+			table.insert(list, { x, 10.1, -3.18, (math.floor(x * 2) % 2 == 0) and "#2f9e44" or "#69db7c", 0.42 })
+			table.insert(list, { x, 10.1, 3.18, (math.floor(x * 2) % 2 == 0) and "#69db7c" or "#2f9e44", 0.42 })
+		end
+		table.insert(list, { -4.1, 14.65, 0, "#ff8fab", 0.55 })
+		table.insert(list, { 1.5, 14.35, 0, "#ffd43b", 0.5 })
+		table.insert(list, { -0.5, 12.6, -3.36, "#ff8fab", 0.45 })
+		table.insert(list, { -0.5, 12.6, 3.36, "#ffd43b", 0.45 })
+		deco(list, PLASTIC, Enum.PartType.Ball)
+	elseif st == "shell" then
+		local list = {}
+		for x = -4.6, 2.2, 0.9 do
+			table.insert(list, { x, 10.1, -3.18, "#ffc9de", 0.45 })
+			table.insert(list, { x, 10.1, 3.18, "#fff5f0", 0.45 })
+		end
+		table.insert(list, { -4.1, 14.65, -0.7, "#ffc9de", 0.5 })
+		table.insert(list, { -4.1, 14.65, 0.7, "#fff5f0", 0.5 })
+		table.insert(list, { 1.5, 14.35, 0, "#fff9f5", 0.5 })
+		deco(list, PLASTIC, Enum.PartType.Ball)
+	end
+end
+
 -- уздечка как настоящая: оголовье за ушами, налобный ремень, нащёчные ремни, капсюль,
 -- подбородный ремень, железо (трензель) с кольцами и тонкий повод к седлу
 function HB.addBridle(e, R)
@@ -302,7 +427,7 @@ function HB.addBridle(e, R)
 	for _, sg in ipairs({ -1, 1 }) do
 		strap(e, H, { 15.25, 14.5, 1.25 * sg }, { 7.9, 15.3, 1.3 * sg }, d * 0.85, c)
 		strap(e, e.content, { 7.9, 15.3, 1.3 * sg }, { 5.6, 15.35, 1.3 * sg }, d * 0.85, c)
-		strap(e, e.content, { 5.6, 15.35, 1.3 * sg }, { 1.6, 15.45, 0.8 * sg }, d * 0.85, c)
+		strap(e, e.content, { 5.6, 15.35, 1.3 * sg }, { 1.75, 14.45, 0.8 * sg }, d * 0.85, c)
 	end
 	-- украшения уздечки на налобном ремне
 	local bs = R.bridleStyle or "classic"
@@ -334,40 +459,119 @@ function HB.addCollar(e)
 	return att
 end
 
---[[ поза: как poseHorse в JS. o = { x, y(высота земли), z, angle, spd, phase, fly, lift, act, t, headTurn, hover } ]]
+--[[ ---------- аллюры ----------
+	Для каждой ноги — своя фаза цикла шага. Опора (копыто на земле): нога равномерно уходит
+	назад. Перенос: нога сгибается в колене (передние — копыто назад, задние — скакательный
+	сустав) и выносится вперёд.
+	 шаг  — 4 такта: левая задняя, левая передняя, правая задняя, правая передняя;
+	 рысь — 2 такта: диагональные пары, между ними подвисание, корпус подпрыгивает дважды за цикл;
+	 галоп — 3 такта (с правой ноги): левая задняя, затем пара «правая задняя + левая передняя»,
+	         затем ведущая правая передняя и подвисание; корпус раскачивается «качелями».
+	Ноги: 1 — левая передняя, 2 — правая передняя, 3 — левая задняя, 4 — правая задняя. ]]
+local GAITS = {
+	[0] = { off = { 0.25, 0.75, 0, 0.5 }, duty = 0.62, A = 0.3, F = 0.55, FH = 0.4, stride = 7.5 },
+	[1] = { off = { 0, 0.5, 0.5, 0 }, duty = 0.42, A = 0.4, F = 0.95, FH = 0.7, stride = 9.5 },
+	[2] = { off = { 0.22, 0.42, 0, 0.22 }, duty = 0.38, A = 0.55, F = 1.1, FH = 0.85, stride = 13 },
+}
+HB.GAITS = GAITS
+local function smooth01(k)
+	k = math.clamp(k, 0, 1)
+	return k * k * (3 - 2 * k)
+end
+-- угол ноги в бедре и сгиб колена для фазы u (0..1)
+local function legCycle(u, G, front)
+	if u < G.duty then
+		local k = u / G.duty
+		return G.A * (1 - 2 * k), 0
+	end
+	local k = (u - G.duty) / (1 - G.duty)
+	local flex = math.sin(math.pi * math.min(1, k * 1.15)) * (front and G.F or G.FH)
+	return -G.A + 2 * G.A * smooth01(k), front and -flex or flex * 0.8
+end
+-- выбрать аллюр по скорости (пикс/с) с запасом, чтобы не дёргался на границе
+local function gaitFor(e, spd)
+	local g = e.gaitS or 0
+	if g == 0 and spd > 118 then g = 1 end
+	if g == 1 and spd < 100 then g = 0 end
+	if g == 1 and spd > 212 then g = 2 end
+	if g == 2 and spd < 195 then g = 1 end
+	e.gaitS = g
+	return g
+end
+
+--[[ поза: o = { pos, angle, spd, fly, lift, act, t, headTurn, slope, gait } ]]
 function HB.pose(e, o)
 	local s = e.s
 	local t = o.t
+	local dt = math.clamp(t - (e.lastT or t), 0, 0.1)
+	e.lastT = t
 	local fly = o.fly or 0
 	local lift = o.lift or 0
 	local hover = e.cloud and (1.3 + math.sin(t * 2 + (e.seed % 9)) * 0.35) * s or 0
 	local A = fly <= 0 and HV.actPose(o.act) or nil
 	local K = HV.V * s / HV.V -- масштаб поз (позы считаются в кубиках V)
-	local up = hover + lift * 2.6 * s + (o.flyH or 0) * fly + (A and A.up * s or 0)
-	e.root.CFrame = CFrame.new(o.pos + Vector3.new(0, up, 0)) * CFrame.Angles(0, -o.angle + (A and A.yaw or 0), lift * 0.25 + fly * 0.08)
+	local spd = o.spd or 0
+	local gait = o.gait or gaitFor(e, spd)
+	if o.gait then e.gaitS = o.gait end
+	local G = GAITS[gait] or GAITS[0]
+	-- насколько лошадь идёт (0 — стоит): плавно, чтобы ноги не дёргались при остановке
+	local moving = (spd > 8 and fly <= 0 and not A and lift <= 0) and 1 or 0
+	e.moveS = (e.moveS or 0) + (moving - (e.moveS or 0)) * math.min(1, dt * 6)
+	local mv = e.moveS
+	-- фаза цикла: частота по скорости и длине шага аллюра
+	local freq = math.clamp(spd * 0.1 / (G.stride * s), 0.35, 2.6)
+	e.cyc = ((e.cyc or math.random()) + dt * freq * (mv > 0.02 and 1 or 0)) % 1
+	local u = e.cyc
+	-- движения корпуса и головы в такт
+	local bounce, gpitch, gnod = 0, 0, 0
+	if gait == 0 then
+		bounce = math.cos(4 * math.pi * u) * 0.04 * HV.V * s
+		gnod = math.sin(4 * math.pi * u + 0.6) * 0.06
+	elseif gait == 1 then
+		bounce = (0.5 + 0.5 * math.cos(4 * math.pi * (u - 0.46))) * 0.32 * HV.V * s - 0.1 * HV.V * s
+		gnod = math.cos(4 * math.pi * (u - 0.2)) * 0.03
+	else
+		bounce = (0.5 + 0.5 * math.cos(2 * math.pi * (u - 0.85))) * 0.5 * HV.V * s - 0.15 * HV.V * s
+		gpitch = math.cos(2 * math.pi * (u - 0.12)) * 0.085
+		gnod = -math.cos(2 * math.pi * (u - 0.12)) * 0.13
+	end
+	bounce *= mv
+	gpitch *= mv
+	gnod *= mv
+	local up = hover + lift * 2.6 * s + (o.flyH or 0) * fly + (A and A.up * s or 0) + bounce
+	local slope = (A and A.pitch ~= 0) and 0 or (o.slope or 0)
+	e.root.CFrame = CFrame.new(o.pos + Vector3.new(0, up, 0)) * CFrame.Angles(0, -o.angle + (A and A.yaw or 0), lift * 0.25 + fly * 0.08 + slope + gpitch)
 	local px, py = A and A.px * K or 0, A and A.py * K or 0
 	e.contentM.C0 = CFrame.new(px, py, 0) * CFrame.Angles(A and A.roll or 0, 0, A and A.pitch or 0) * CFrame.new(-px, -py, 0)
-	local move = math.min(1, (o.spd or 0) / 110)
-	-- кивок головой в такт шагам. Раньше голова кивала вдвое чаще ног, а сила кивка
-	-- скакала вместе со скоростью от сервера — голова тряслась. Теперь кивок сглажен и в такт ногам.
-	e.moveS = (e.moveS or 0) + (move - (e.moveS or 0)) * 0.12
-	local nod = math.clamp((e.moveS - 0.25) / 0.35, 0, 1)
-	local bob = (fly <= 0 and not A) and math.sin(o.phase or 0) * 0.045 * nod or 0
 	local headYaw = A and A.headYaw or (o.headTurn or 0) * 0.7
-	e.headM.C0 = CFrame.new(e.HP) * CFrame.Angles(0, headYaw, (A and A.head or 0) + bob + (fly > 0 and 0.15 or 0))
+	e.headM.C0 = CFrame.new(e.HP) * CFrame.Angles(0, headYaw, (A and A.head or 0) + gnod - slope * 0.4 + (fly > 0 and 0.15 or 0))
 	e.earsM.C0 = CFrame.new(e.EP - e.HP) * CFrame.Angles(0, 0, A and -A.ears or 0)
+	local kk = math.min(1, dt * 20)
 	for i, l in ipairs(e.legs) do
-		local diag = (i == 1 or i == 4) and 1 or -1
-		local r
-		if fly > 0 then r = (i <= 2 and 0.7 or -0.5) * fly
-		elseif A and A.legs then r = A.legs[i]
-		elseif lift > 0 then r = (i <= 2 and 0.9 or -0.6) * lift
-		else r = math.sin(o.phase or 0) * diag * 0.55 * move end
-		l.m.C0 = CFrame.new(l.pos) * CFrame.Angles(0, 0, r)
+		local r, kn
+		if fly > 0 then
+			r = (l.front and 0.7 or -0.5) * fly
+			kn = (l.front and -1.0 or 0.7) * fly
+		elseif A and A.legs then
+			r = A.legs[i] or 0
+			kn = l.front and -math.max(0, r) * 0.9 or 0
+		elseif lift > 0 then
+			r = (l.front and 0.9 or -0.6) * lift
+			kn = (l.front and -1.3 or 0.9) * lift
+		else
+			local cr, ck = legCycle((u + G.off[i]) % 1, G, l.front)
+			r, kn = cr * mv, ck * mv
+		end
+		-- плавный переход между аллюрами и позами
+		l.r = l.r + (r - l.r) * kk
+		l.k = l.k + (kn - l.k) * kk
+		l.m.C0 = CFrame.new(l.pos) * CFrame.Angles(0, 0, l.r)
+		if l.km then l.km.C0 = CFrame.new(l.kOff) * CFrame.Angles(0, 0, l.k) end
 	end
 	local ty = math.sin(t * 2.2 + (e.seed % 7)) * 0.35
-	local tz = move * 0.5 + fly * 0.4 + ((A and A.k == "kick") and 0.6 or 0)
+	local tz = mv * (0.3 + gait * 0.2) + fly * 0.4 + ((A and A.k == "kick") and 0.6 or 0)
 	e.tailM.C0 = CFrame.new(e.TP) * CFrame.Angles(0, ty, tz)
+	local move = math.min(1, spd / 110)
 	for _, w in ipairs(e.wings) do
 		local f = w.f
 		local flap
@@ -460,7 +664,7 @@ end
 local portraitCache = {}
 local cacheOrder = {}
 function HB.portraitModel(look, tack)
-	local key = tostring(look.id) .. "|" .. Horses.lookKey(look) .. "|" .. tostring(look.maneDye) .. "|" .. tostring(look.maneStyle) .. (tack and "t" or "")
+	local key = tostring(look.id) .. "|" .. Horses.lookKey(look) .. "|" .. tostring(look.maneDye) .. "|" .. tostring(look.maneStyle) .. (tack and ("t" .. tostring(tack.saddleStyle) .. tostring(tack.saddleColor) .. tostring(tack.bridleStyle) .. tostring(tack.bridleColor) .. tostring(tack.pad) .. tostring(tack.boots)) or "")
 	local m = portraitCache[key]
 	if not m then
 		local e = HB.build(look, { anchored = true, tack = tack })

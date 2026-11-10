@@ -240,6 +240,31 @@ local function onState(list)
 	end
 end
 
+--[[ ---------- рельеф под ногами ---------- ]]
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Include
+rayParams.FilterDescendantsInstances = { workspace.Terrain }
+rayParams.IgnoreWater = true
+-- настоящая поверхность Terrain под точкой карты (карта высот даёт её с точностью до вокселя)
+function Render.surfaceY(x, y, guess)
+	if y > World.H then return guess end
+	local hit = workspace:Raycast(Vector3.new(x * K, guess + 5, y * K), Vector3.new(0, -12, 0), rayParams)
+	if hit then return hit.Position.Y end
+	return guess
+end
+-- наклон корпуса по склону вдоль направления движения (нос вверх на подъёме)
+function Render.slopeLerp(cur, x, y, angle, dt, fly)
+	local want = 0
+	if (fly or 0) < 0.5 and y <= World.H then
+		local ca, sa = math.cos(angle), math.sin(angle)
+		local h1 = World.heightAt(x + ca * 45, y + sa * 45)
+		local h0 = World.heightAt(x - ca * 45, y - sa * 45)
+		want = math.clamp(math.atan2(h1 - h0, 9), -0.45, 0.45)
+	end
+	cur = cur or want
+	return cur + (want - cur) * math.min(1, dt * 6)
+end
+
 --[[ ---------- лошади под седлом у игроков ---------- ]]
 local function updateMount(pl, dt, t)
 	local char = pl.Character
@@ -284,8 +309,12 @@ local function updateMount(pl, dt, t)
 	local flying = char:GetAttribute("Flying") == true
 	local lift = 0
 	if pl == player then lift = Render.riderLift or 0 end
-	HB.pose(rec.e, { pos = ground - Vector3.new(0, lift * 2.6 * rec.e.s, 0), angle = math.atan2(lv.Z, lv.X), spd = spd, phase = rec.phase, fly = flying and 1 or 0, flyH = 0,
-		lift = lift, act = act, t = t })
+	local mx, my = World.fromStuds(hrp.Position)
+	local ang = math.atan2(lv.Z, lv.X)
+	rec.slope = Render.slopeLerp(rec.slope, mx, my, ang, dt, flying and 1 or 0)
+	local gait = char:GetAttribute("Gait")
+	HB.pose(rec.e, { pos = ground - Vector3.new(0, lift * 2.6 * rec.e.s, 0), angle = ang, spd = spd, phase = rec.phase, fly = flying and 1 or 0, flyH = 0,
+		lift = lift, act = act, t = t, slope = rec.slope, gait = type(gait) == "number" and gait or nil })
 end
 
 --[[ ---------- свои лошади в денниках и на рынке ---------- ]]
@@ -364,27 +393,41 @@ function Render.update(dt)
 			e.z += ((e.tz or 0) - e.z) * math.min(1, dt * 15)
 			e.phase += dt * (3 + e.spd * 0.045) * (e.spd > 4 and 1 or 0)
 			local gy = World.groundY(e.px, e.py)
+			local far = (Vector3.new(e.px * K, gy, e.py * K) - camPos).Magnitude > 260
+			if not far then gy = Render.surfaceY(e.px, e.py, gy) end
+			e.gy = e.gy and (e.gy + (gy - e.gy) * math.min(1, dt * 12)) or gy
+			gy = e.gy
 			local pos = Vector3.new(e.px * K, gy + e.z * K, e.py * K)
-			local far = (pos - camPos).Magnitude > 260
+			-- лошади в маленьких пещерках видны только тем, кто сам у пещерки (иначе светятся издалека)
+			e.gT = (e.gT or 0) - dt
+			if e.gT <= 0 then
+				e.gT = 0.5 + math.random() * 0.3
+				e.grotto = e.py <= World.H and World.inGrotto(e.px, e.py, -20) or nil
+			end
+			local hidden = false
+			if e.grotto then
+				local g = e.grotto
+				hidden = Util.hypot(camPos.X / K - g.x, camPos.Z / K - g.y) > g.r + 160
+			end
 			if e.data.kind == "ghost" then
-				local hidden = (e.tz or 0) < 0
-				local want = folder
-				if hidden then want = nil end
-				if b.model.Parent ~= want then b.model.Parent = want end
+				hidden = hidden or (e.tz or 0) < 0
 				pos = Vector3.new(e.px * K, gy + math.sin(t * 2 + e.id) * 0.5 + 0.6, e.py * K)
 			end
+			local wantParent = (not hidden) and folder or nil
+			if b.model.Parent ~= wantParent then b.model.Parent = wantParent end
 			if b.kind == "bunny" or b.kind == "deer" or (b.kind == "ghost" and not b.legs) then
 				local hop = 0
 				if b.kind == "deer" then hop = math.abs(math.sin(e.phase)) * 0.4 * math.min(1, e.spd / 120) end
 				local headDown = (e.act and e.act.k == "graze") and -0.25 or 0
 				b.root.CFrame = CFrame.new(pos + Vector3.new(0, hop, 0)) * CFrame.Angles(0, -e.angle, headDown)
-			elseif not far or (math.floor(t * 10) % 2 == 0) then
+			elseif not hidden and (not far or (math.floor(t * 10) % 2 == 0)) then
 				local act = nil
 				if e.act then
 					local tt = serverNow() - e.act.start
 					if tt < e.act.d then act = { k = e.act.k, t = tt, d = e.act.d, leg = e.act.leg } end
 				end
-				HB.pose(b, { pos = pos, angle = e.angle, spd = e.spd, phase = e.phase, fly = e.fly, flyH = 9, act = act, t = t })
+				e.slope = Render.slopeLerp(e.slope, e.px, e.py, e.angle, dt, e.fly)
+				HB.pose(b, { pos = pos, angle = e.angle, spd = e.spd, phase = e.phase, fly = e.fly, flyH = 9, act = act, t = t, slope = e.slope })
 			end
 		end
 	end

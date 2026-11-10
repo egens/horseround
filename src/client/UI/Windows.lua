@@ -158,6 +158,7 @@ views.horse = function(B, d)
 	Kit.button(ar, "💕 Скрестить", function() open("breed", { id = h.id }) end, { color = "pink", disabled = dis or not (Horses.isAdult(h) and not (h.sex == "f" and h.preg)) })
 	Kit.button(ar, "💇 Грива", function() open("mane", { id = h.id }) end, { disabled = dis })
 	Kit.button(ar, "🎭 Трюки", function() open("tricks", { id = h.id }) end, { disabled = dis })
+	Kit.button(ar, "🐴 Седло и уздечка", function() open("tack", { id = h.id }) end)
 	Kit.h(B, "Уход (мини-игры)")
 	local cr = Kit.row(B)
 	Kit.button(cr, "🖌️ Расчесать", function() act("care", h.id, "brush") end, { disabled = dis })
@@ -279,6 +280,56 @@ local function tackStyles(B)
 		end
 	end
 end
+-- окно «Седло и уздечка»: стиль и цвет седла, уздечки, вальтрапа и ногавок — с примеркой на лошади
+local function tackLook(t)
+	return {
+		pad = t.pad or "#7a6a55", saddleStyle = t.saddleStyle or "classic", saddleColor = t.saddleColor or "#5b3a1e",
+		bridleStyle = t.bridleStyle or "classic", bridleColor = t.bridleColor or "#2b1a10", boots = t.boots or nil,
+	}
+end
+views.tack = function(B, d)
+	local P = State.P
+	local t = P.tack
+	local h = d.id and State.byId(d.id) or nil
+	if not h then
+		for _, q in ipairs(P.horses) do
+			if q.state == "ridden" then h = q break end
+		end
+	end
+	h = h or P.horses[1]
+	if d.id then Kit.button(Kit.row(B), "← К лошади", function() open("horse", { id = d.id }) end, { color = "ghost" }) end
+	if h then Kit.portrait(Kit.row(B), Horses.look(h), 420, 220, tackLook(t)) end
+	if not t.saddle and not t.bridle then
+		Kit.note(B, "Седло и уздечка продаются в повозке «Корм и амуниция». Купи их — и здесь можно будет выбрать цвета.")
+	end
+	for _, kv in ipairs({ { "saddle", "🏇 Седло" }, { "bridle", "➰ Уздечка" } }) do
+		local kind = kv[1]
+		if t[kind] then
+			Kit.h(B, kv[2])
+			Kit.small(B, "Цвет кожи:")
+			local r = Kit.row(B)
+			for _, c in ipairs(Items.LEATHER) do Kit.swatch(r, c, t[kind .. "Color"] == c, function() act("tackColor", kind, c) end) end
+			local sr = Kit.row(B)
+			for _, key in ipairs(Items.TACK_STYLE_ORDER) do
+				local st = Items.TACK_STYLES[key]
+				if t[kind .. "Styles"] and t[kind .. "Styles"][key] then
+					local on = t[kind .. "Style"] == key
+					Kit.button(sr, st.icon .. " " .. st.name .. (on and " ✔" or ""), function() act("tackStyle", kind, key) end, { small = true, active = on })
+				end
+			end
+		end
+	end
+	for _, k in ipairs({ "pad", "boots" }) do
+		if t[k] then
+			Kit.h(B, Items.TACK[k].icon .. " " .. Items.TACK[k].name)
+			local r = Kit.row(B)
+			for _, c in ipairs(Items.COLORS) do Kit.swatch(r, c, t[k] == c, function() act("color", k, c) end) end
+		end
+	end
+	Kit.small(B, "Новые стили сёдел и уздечек (кристальные, цветочные, ракушечные) покупаются в повозке «Корм и амуниция».")
+	return "🐴 Седло и уздечка"
+end
+
 views.shop = function(B)
 	local P = State.P
 	Kit.text(B, "У тебя: <b>" .. P.money .. " 💰</b>")
@@ -636,6 +687,7 @@ views.inventory = function(B)
 		if P.tack[k] then Kit.text(tr, Items.TACK[k].icon .. " " .. Items.TACK[k].name, { width = 0, widthOffset = 170, bg = C.panel2, size = 14 }) end
 	end
 	Kit.text(tr, "➰ Простое лассо", { width = 0, widthOffset = 170, bg = C.panel2, size = 14 })
+	Kit.button(Kit.row(B), "🐴 Седло и уздечка — цвета", function() open("tack", {}) end, { small = true })
 	Kit.h(B, "Моя кофта")
 	local sr = Kit.row(B)
 	for _, c in ipairs(Items.SHIRTS) do Kit.swatch(sr, c, P.shirt == c, function() act("shirt", c) end) end
