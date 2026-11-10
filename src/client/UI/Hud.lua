@@ -95,6 +95,7 @@ function Hud.build()
 	hudButton(right, "🐴 Лошади", function() Hud.windows.open("stable", { can = true }) end)
 	el.quests = hudButton(right, "📜", W("quests"))
 	hudButton(right, "👥", W("players"))
+	hudButton(right, "📖 Индекс", W("index"))
 	hudButton(right, "🗺 Карта", function() Hud.toggleMap() end)
 	el.detector = hudButton(right, "📡", function() State.act("detector") end)
 	hudButton(right, "🎒", W("inventory"))
@@ -213,6 +214,12 @@ function Hud.buildMinimap()
 	mm.me.ZIndex = 5
 	Kit.stroke(mm.me, C.white, 1)
 	mm.others, mm.herds, mm.bunnies = {}, {}, {}
+	-- жители — цветные точки (те же цвета, что на большой карте)
+	for _, n in ipairs(Q.NPCS) do
+		local d = dot(n.dot or "#ffffff", 5)
+		d.Position = UDim2.fromOffset(n.x / World.W * MM_W, math.min(n.y, World.H) / World.H * MM_H)
+		Kit.stroke(d, color("#222222"), 1)
+	end
 	mm.shoe = dot("#ffe066", 6)
 	mm.treasure = make("TextLabel", { Size = UDim2.fromOffset(14, 14), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, Text = "✖", TextColor3 = C.red, Font = Kit.BOLD, TextSize = 14, ZIndex = 4, Parent = frame })
 	-- клик или тап по миникарте открывает большую карту
@@ -248,10 +255,13 @@ local function updateMinimap()
 	for id, d in pairs(mm.others) do
 		if not seen[id] then d:Destroy(); mm.others[id] = nil end
 	end
-	-- табуны
+	-- табуны — головы лошадей
 	for k, hpos in pairs(ws.herds or {}) do
-		local d = mm.herds[k] or mm.dot("#7a4a22", 5)
-		mm.herds[k] = d
+		local d = mm.herds[k]
+		if not d then
+			d = make("TextLabel", { Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, Text = "🐴", TextSize = 10, ZIndex = 4, Parent = mm.frame })
+			mm.herds[k] = d
+		end
 		d.Position = mmPos(hpos[1], hpos[2])
 		d.Visible = hpos[2] <= World.H
 	end
@@ -320,12 +330,32 @@ function Hud.buildBigMap()
 		end
 		flush(BM_COLS)
 	end
-	-- названия краёв — в середине их клеток
+	-- дороги — коричневые линии
+	for _, r in ipairs(World.ROADS) do
+		for i = 1, #r - 1 do
+			local ax, ay, bx, by = r[i][1], r[i][2], r[i + 1][1], r[i + 1][2]
+			if ay <= World.H and by <= World.H then
+				local L = Util.hypot(bx - ax, by - ay)
+				make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale((ax + bx) / 2 / World.W, (ay + by) / 2 / World.H),
+					Size = UDim2.new(L / World.W, 2, 0, 3), Rotation = math.deg(math.atan2(by - ay, bx - ax)), BackgroundColor3 = color("#8a6238"),
+					BackgroundTransparency = 0.15, BorderSizePixel = 0, ZIndex = 33, Parent = frame })
+			end
+		end
+	end
+	-- названия краёв — в середине их клеток, на тёмной подложке (их легко прочитать)
 	for reg, sm in pairs(sums) do
 		local name = World.REGION_NAMES[reg]
 		if name and sm.n >= 12 and reg ~= "grottocave" then
-			bmLabel(frame, name, sm.x / sm.n, sm.y / sm.n, 14, C.white, 33)
+			local t = bmLabel(frame, name, sm.x / sm.n, sm.y / sm.n, 15, C.white, 33)
+			t.BackgroundColor3 = Color3.new(0, 0, 0)
+			t.BackgroundTransparency = 0.6
+			Kit.corner(t, 6)
+			make("UIPadding", { PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4), Parent = t })
 		end
+	end
+	-- озёра с названиями
+	for _, L in ipairs(World.LAKES) do
+		if L.name then bmLabel(frame, (L.lava and "🌋 " or "💧 ") .. L.name, L.x, L.y, 11, L.lava and color("#ffd8a8") or color("#d0ebff"), 34) end
 	end
 	-- важные места
 	local function place(icon, name, x, y)
@@ -339,9 +369,12 @@ function Hud.buildBigMap()
 	place("🌀", "Портал", World.PORTAL.x, World.PORTAL.y)
 	place("🏁", "Скачки", World.START.x, World.START.y)
 	for _, I in ipairs(World.ISLANDS) do place("⛵", "", I.pier.x, I.pier.y) end
+	-- жители: у каждого своя цветная точка (список цветов — справа)
 	for _, n in ipairs(Q.NPCS) do
-		local d = make("TextLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Position = bmPos(n.x, n.y), Size = UDim2.fromOffset(16, 16), BackgroundTransparency = 1,
-			Text = "💬", TextSize = 13, ZIndex = 34, Parent = frame })
+		local d = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = bmPos(n.x, n.y), Size = UDim2.fromOffset(13, 13), BackgroundColor3 = color(n.dot or "#ffffff"),
+			BorderSizePixel = 0, ZIndex = 36, Parent = frame })
+		Kit.corner(d, 7)
+		Kit.stroke(d, color("#222222"), 2)
 		bm.npc = bm.npc or {}
 		bm.npc[n.id] = d
 	end
@@ -364,9 +397,26 @@ function Hud.buildBigMap()
 	bm.title = top
 	Kit.closeButton(frame, function() Hud.toggleMap(false) end, 34, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), ZIndex = 40 })
 	local legend = make("TextLabel", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, -6), Size = UDim2.new(1, -16, 0, 20), BackgroundTransparency = 1,
-		Text = "▲ ты   ⚪ игроки   🟤 табуны   💬 жители   ✖ клад", Font = Kit.BOLD, TextSize = 14, TextColor3 = C.white, TextStrokeTransparency = 0.2,
+		Text = "▲ ты   ⚪ игроки   🐴 лошади (табуны)   ● жители   ✖ клад   🚂 поезд   🧲 подкова   — дороги", Font = Kit.BOLD, TextSize = 14, TextColor3 = C.white, TextStrokeTransparency = 0.2,
 		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 39, Parent = frame })
 	bm.legend = legend
+	-- список жителей сбоку: какая точка — кто
+	local side = make("Frame", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(230, 0), AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45, ZIndex = 39, Parent = frame })
+	Kit.corner(side, 8)
+	Kit.pad(side, 6)
+	make("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = side })
+	make("TextLabel", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, Text = "Жители на карте:", Font = Kit.BOLD, TextSize = 14, TextColor3 = C.white,
+		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 40, LayoutOrder = 0, Parent = side })
+	for i, n in ipairs(Q.NPCS) do
+		local row = make("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, ZIndex = 40, LayoutOrder = i, Parent = side })
+		local d = make("Frame", { Position = UDim2.fromOffset(2, 2), Size = UDim2.fromOffset(12, 12), BackgroundColor3 = color(n.dot or "#ffffff"), BorderSizePixel = 0, ZIndex = 41, Parent = row })
+		Kit.corner(d, 6)
+		Kit.stroke(d, color("#222222"), 1)
+		make("TextLabel", { Position = UDim2.fromOffset(20, 0), Size = UDim2.new(1, -20, 1, 0), BackgroundTransparency = 1, Text = n.name .. " — " .. (n.dotName or "") .. " точка",
+			Font = Kit.FONT, TextSize = 12, TextColor3 = C.white, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 41, Parent = row })
+	end
+	bm.side = side
 end
 local function updateBigMap()
 	local ch = player.Character
@@ -398,9 +448,13 @@ local function updateBigMap()
 	for id, o in pairs(bm.others) do
 		if not seen[id] then o.d:Destroy(); o.l:Destroy(); bm.others[id] = nil end
 	end
+	-- табуны: голова лошади там, где пасутся лошади
 	for k, hpos in pairs(ws.herds or {}) do
-		local d = bm.herds[k] or bm.dot("#7a4a22", 8, 35)
-		bm.herds[k] = d
+		local d = bm.herds[k]
+		if not d then
+			d = make("TextLabel", { Size = UDim2.fromOffset(22, 22), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, Text = "🐴", TextSize = 18, ZIndex = 35, Parent = bm.frame })
+			bm.herds[k] = d
+		end
 		d.Position = bmPos(hpos[1], hpos[2])
 		d.Visible = hpos[2] <= World.H
 	end

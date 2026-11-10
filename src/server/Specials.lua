@@ -261,11 +261,15 @@ function Creatures.update(dt)
 		end
 		local dx, dy = tx - a.x, ty - a.y
 		local dd = hypot(dx, dy)
-		local v = dd > 2 and math.min(sp, dd / dt) or 0
-		if v > 0 then
-			a.x += dx / dd * v * dt
-			a.y += dy / dd * v * dt
-			a.angle = Util.lerpAngle(a.angle, math.atan2(dy, dx), math.min(1, dt * 6))
+		-- разгон и торможение плавные: олень не срывается с места мгновенно, а набирает скорость
+		local want = dd > 2 and math.min(sp, dd / math.max(dt, 0.001) * 0.5) or 0
+		a.v = (a.v or 0) + (want - (a.v or 0)) * math.min(1, dt * (want > (a.v or 0) and 2.5 or 4))
+		local v = a.v
+		if v > 0.5 and dd > 0.5 then
+			-- поворачивает плавно и бежит туда, куда смотрит
+			a.angle = Util.lerpAngle(a.angle, math.atan2(dy, dx), math.min(1, dt * 4))
+			a.x += math.cos(a.angle) * v * dt
+			a.y += math.sin(a.angle) * v * dt
 		end
 		a.spd = v
 		-- иногда щиплет траву

@@ -169,7 +169,7 @@ views.horse = function(B, d)
 		Kit.h(B, "🍼 Жеребёнок")
 		local yr = Kit.row(B)
 		Kit.button(yr, h.state == "walk" and "🏠 Закончить прогулку" or "🐾 Гулять", function() act("walk", h.id) end, { color = "green", disabled = dis })
-		Kit.button(yr, "🍼 Молоко из бутылочки ×" .. (P.inv.milk or 0), function() act("feed", h.id, "milk") end, { disabled = dis or (P.inv.milk or 0) == 0 })
+		Kit.button(yr, "🍼 Напоить из бутылочки ×" .. (P.inv.milk or 0), function() act("care", h.id, "milk") end, { disabled = dis or (P.inv.milk or 0) == 0 })
 		Kit.button(yr, "💕 Погладить", function() act("pet", h.id) end, { color = "pink", disabled = dis })
 		Kit.button(yr, "🎾 Поиграть", function() act("play", h.id) end, { disabled = dis })
 	end
@@ -961,6 +961,51 @@ views.help = function(B)
 	Kit.button(r, "Начать заново", function() open("confirmReset", {}) end, { small = true, color = "ghost" })
 	return "🐴 Лошадиная ферма — как играть"
 end
+--[[ ================= индекс пород ================= ]]
+local HOME_TEXT = {
+	magic = "Грибное королевство", desert = "пустыня", steppe = "степь", foxwood = "Лисий лес", deepforest = "Дремучий лес",
+	dragonrock = "Драконьи скалы и Драконий остров", tundra = "тундра", cave = "пещера", forest = "лес у Лесного озера",
+	sky = "небесные острова", island = "острова в море", grotto = "маленькие пещерки", holiday = "праздники",
+}
+local function breedHome(k, B)
+	if B.weight and B.weight > 0 then return "Большое поле" end
+	if k == "bonehorse" then return "Костяной остров" end
+	if k == "pinkdragon" then return "Грибное королевство (очень редко, чаще в радужный дождь)" end
+	return HOME_TEXT[B.home or ""] or "где-то в мире"
+end
+local indexLooks = {}
+views.index = function(B)
+	local P = State.P
+	local caught = P.caughtBreeds or {}
+	local owned = {}
+	for _, h in ipairs(P.horses) do owned[h.breed] = true end
+	local list = {}
+	for _, k in ipairs(Genetics.BREED_ORDER) do
+		if k ~= "mix" then table.insert(list, k) end
+	end
+	local n = 0
+	for _, k in ipairs(list) do if caught[k] or owned[k] then n += 1 end end
+	Kit.text(B, "📖 Здесь все породы лошадей. Поймала: <b>" .. n .. " из " .. #list .. "</b>. Пойманные — с портретом, остальные пока под вопросом: внизу подсказка, где их искать.")
+	local g = Kit.grid(B)
+	for _, k in ipairs(list) do
+		local Bd = Genetics.BREEDS[k]
+		local got = caught[k] or owned[k]
+		if got then
+			indexLooks[k] = indexLooks[k] or Horses.look(Horses.create({ breed = k, age = 6 }))
+			Kit.card(g, indexLooks[k], { "✅ " .. Bd.name, (caught[k] and ("поймано: " .. caught[k]) or "есть в конюшне") }, nil, { width = 150 })
+		else
+			local card = make("Frame", { Size = UDim2.fromOffset(150, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = color("#e9e3d6"), LayoutOrder = Kit.nextOrder(), Parent = g })
+			Kit.corner(card, 10)
+			Kit.pad(card, 6)
+			make("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = card })
+			make("TextLabel", { Size = UDim2.new(1, 0, 0, 80), BackgroundColor3 = color("#cfc6b5"), Text = "❓", TextSize = 40, Font = Kit.BOLD, TextColor3 = color("#7a6f5d"), LayoutOrder = Kit.nextOrder(), Parent = card })
+			Kit.text(card, Bd.name, { size = 14, bold = true, color = C.muted })
+			Kit.text(card, "Где искать: " .. breedHome(k, Bd), { size = 12, color = C.muted })
+		end
+	end
+	return "📖 Индекс лошадей"
+end
+
 views.confirmReset = function(B)
 	Kit.text(B, "Точно начать заново? Все лошади, деньги и вещи пропадут.")
 	local r = Kit.row(B)

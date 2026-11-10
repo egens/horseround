@@ -163,13 +163,15 @@ local function updateHooves(dt)
 	local ch = player.Character
 	local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
 	local m = State.hud and State.hud.mounted
-	if not hrp or not m or not ch:FindFirstChild("Mount") or ch:GetAttribute("Flying") then
+	if not hrp or not m or not ch:FindFirstChild("Mount") or ch:GetAttribute("Flying") or ch:GetAttribute("Swimming") then
 		hoof.t, hoof.i = 0, 1
 		return
 	end
 	local v = hrp.AssemblyLinearVelocity
 	local spd = Vector3.new(v.X, 0, v.Z).Magnitude
-	if spd < 1.5 then
+	local hum = ch:FindFirstChildOfClass("Humanoid")
+	-- в прыжке копыта не стучат
+	if spd < 1.5 or (hum and hum.FloorMaterial == Enum.Material.Air) then
 		hoof.t, hoof.i = 0, 1
 		return
 	end
@@ -200,7 +202,7 @@ local function updateSwim(dt)
 	local ch = player.Character
 	local hum = ch and ch:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
-	if hum:GetState() == Enum.HumanoidStateType.Swimming then
+	if hum:GetState() == Enum.HumanoidStateType.Swimming or ch:GetAttribute("Swimming") then
 		swimT -= dt
 		if swimT <= 0 then
 			swimT = 0.7 + math.random() * 0.4

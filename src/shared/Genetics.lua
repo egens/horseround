@@ -11,62 +11,67 @@
 	  Rn (Roan)       — чалость
 	  Z  (Silver)     — серебристость
 	  F  (Flaxen)     — ff даёт светлую гриву у рыжих
+	  Ch (Champagne)  — шампань: золотисто-, янтарно- и классическая шампань, розовая кожа
+	  SW (Splash)     — сплэш: белые ноги, живот и голова, голубые глаза
+	  SB (Sabino)     — сабино: высокие белые «чулки», белые пятна на животе, большая проточина
+	  Sty (Sooty)     — тёмный налёт на спине и крупе
 ]]
 local Util = require(script.Parent.Util)
 local mix = Util.mix
 
 local Genetics = {}
 
-Genetics.LOCI = { "E", "A", "Cr", "D", "G", "TO", "LP", "Rn", "Z", "F" }
+Genetics.LOCI = { "E", "A", "Cr", "D", "G", "TO", "LP", "Rn", "Z", "F", "Ch", "SW", "SB", "Sty" }
 local SYMBOLS = {
 	E = { "E", "e" }, A = { "A", "a" }, Cr = { "Cr", "n" }, D = { "D", "nd" }, G = { "G", "g" },
 	TO = { "TO", "n" }, LP = { "Lp", "n" }, Rn = { "Rn", "n" }, Z = { "Z", "n" }, F = { "F", "f" },
+	Ch = { "Ch", "n" }, SW = { "SW", "n" }, SB = { "SB", "n" }, Sty = { "Sty", "n" },
 }
-local DEFAULT_FREQ = { E = 0.6, A = 0.5, Cr = 0, D = 0, G = 0, TO = 0, LP = 0, Rn = 0, Z = 0, F = 0.9 }
+local DEFAULT_FREQ = { E = 0.6, A = 0.5, Cr = 0, D = 0, G = 0, TO = 0, LP = 0, Rn = 0, Z = 0, F = 0.9, Ch = 0.02, SW = 0.02, SB = 0.03, Sty = 0.18 }
 
 -- freq — частота «вариантного» аллеля в породе; weight — как часто встречается в диком табуне
 Genetics.BREEDS = {
 	akhal = { name = "Ахалтекинская", weight = 1, size = 1.0, temper = 0.75, sheen = true,
-		freq = { E = 0.65, A = 0.55, Cr = 0.3, G = 0.06 },
+		freq = { E = 0.65, A = 0.55, Cr = 0.3, G = 0.06, Ch = 0.08 },
 		stats = { speed = { 75, 95 }, jump = { 45, 70 }, dressage = { 50, 75 }, stamina = { 75, 95 } } },
 	arab = { name = "Арабская", weight = 1.2, size = 0.92, temper = 0.7, coats = { rainbow = 0.03 },
-		freq = { E = 0.6, A = 0.6, G = 0.45, Rn = 0.02, Cr = 0.12, LP = 0.06 },
+		freq = { E = 0.6, A = 0.6, G = 0.45, Rn = 0.02, Cr = 0.12, LP = 0.06, SB = 0.08, Sty = 0.15 },
 		stats = { speed = { 70, 90 }, jump = { 40, 65 }, dressage = { 55, 75 }, stamina = { 85, 100 } } },
 	orlov = { name = "Орловский рысак", weight = 1.2, size = 1.05, temper = 0.5,
-		freq = { E = 0.85, A = 0.45, G = 0.45 },
+		freq = { E = 0.85, A = 0.45, G = 0.45, SB = 0.05, Sty = 0.25 },
 		stats = { speed = { 70, 92 }, jump = { 40, 60 }, dressage = { 45, 70 }, stamina = { 70, 90 } } },
 	friesian = { name = "Фризская", weight = 0.8, size = 1.1, temper = 0.3, feather = true, longMane = true, marksMaresOnly = true,
 		freq = { E = 1, A = 0, G = 0.22, Cr = 0.18 },
 		stats = { speed = { 50, 70 }, jump = { 40, 60 }, dressage = { 75, 95 }, stamina = { 60, 80 } } },
 	haflinger = { name = "Хафлингер", weight = 1, size = 0.88, temper = 0.25,
-		freq = { E = 0, A = 0.5, F = 0 },
+		freq = { E = 0, A = 0.5, F = 0, Sty = 0.35 },
 		stats = { speed = { 45, 65 }, jump = { 45, 65 }, dressage = { 50, 70 }, stamina = { 70, 90 } } },
 	appaloosa = { name = "Аппалуза", weight = 1, size = 0.97, temper = 0.5, alwaysSpots = true,
-		freq = { E = 0.6, A = 0.5, Cr = 0.22, D = 0.1, G = 0.12, LP = 0.75, Rn = 0.04 },
+		freq = { E = 0.6, A = 0.5, Cr = 0.22, D = 0.1, G = 0.12, LP = 0.75, Rn = 0.04, Sty = 0.2 },
 		stats = { speed = { 60, 80 }, jump = { 50, 70 }, dressage = { 45, 70 }, stamina = { 70, 90 } } },
 	paint = { name = "Пейнтхорс", weight = 1, size = 0.97, temper = 0.45,
-		freq = { E = 0.55, A = 0.5, Cr = 0.08, D = 0.04, G = 0.03, TO = 0.5, Rn = 0.04 },
+		freq = { E = 0.55, A = 0.5, Cr = 0.08, D = 0.04, G = 0.03, TO = 0.5, Rn = 0.04, SB = 0.18, SW = 0.12 },
 		stats = { speed = { 60, 82 }, jump = { 45, 70 }, dressage = { 45, 70 }, stamina = { 65, 85 } } },
 	trakehner = { name = "Тракененская", weight = 1, size = 1.05, temper = 0.55,
-		freq = { E = 0.75, A = 0.6, G = 0.1 },
+		freq = { E = 0.75, A = 0.6, G = 0.1, Sty = 0.3 },
 		stats = { speed = { 60, 80 }, jump = { 70, 95 }, dressage = { 70, 92 }, stamina = { 60, 80 } } },
 	budyonny = { name = "Будённовская", weight = 1, size = 1.03, temper = 0.5, sheen = true,
-		freq = { E = 0.15, A = 0.6, F = 0.8 },
+		freq = { E = 0.15, A = 0.6, F = 0.8, Sty = 0.35 },
 		stats = { speed = { 65, 85 }, jump = { 65, 88 }, dressage = { 55, 80 }, stamina = { 70, 90 } } },
 	fjord = { name = "Норвежский фьорд", weight = 0.8, size = 0.85, temper = 0.2, fjordMane = true,
 		freq = { E = 0.55, A = 0.8, Cr = 0.18, D = 1 },
 		stats = { speed = { 40, 60 }, jump = { 40, 60 }, dressage = { 45, 65 }, stamina = { 75, 95 } } },
 	shetland = { name = "Шетлендский пони", weight = 0.9, size = 0.62, temper = 0.45,
-		freq = { E = 0.65, A = 0.5, Cr = 0.06, D = 0.04, G = 0.06, TO = 0.25, Rn = 0.06, Z = 0.2 },
+		freq = { E = 0.65, A = 0.5, Cr = 0.06, D = 0.04, G = 0.06, TO = 0.25, Rn = 0.06, Z = 0.2, SW = 0.1, SB = 0.1, Ch = 0.1 },
 		stats = { speed = { 30, 50 }, jump = { 40, 65 }, dressage = { 35, 55 }, stamina = { 60, 85 } } },
 	przewalski = { name = "Лошадь Пржевальского", weight = 0, home = "steppe", hw = 1, size = 0.86, temper = 0.85, przMane = true,
 		freq = { E = 1, A = 1, D = 1, F = 1 },
 		stats = { speed = { 60, 82 }, jump = { 40, 62 }, dressage = { 30, 50 }, stamina = { 85, 100 } } },
 	fedorov = { name = "Федоровская", weight = 0.9, size = 1.0, temper = 0.4,
-		freq = { E = 0.15, A = 0.5, Cr = 0.35, G = 0.3, F = 0.5 },
+		freq = { E = 0.15, A = 0.5, Cr = 0.35, G = 0.3, F = 0.5, Ch = 0.14, Sty = 0.2 },
 		stats = { speed = { 60, 82 }, jump = { 55, 80 }, dressage = { 60, 85 }, stamina = { 65, 88 } } },
 	andalusian = { name = "Андалузская", weight = 1, size = 1.02, temper = 0.45, longMane = true, coats = { pearl = 0.1 },
-		freq = { E = 0.65, A = 0.3, G = 0.5, Cr = 0.12, LP = 0.08 },
+		freq = { E = 0.65, A = 0.3, G = 0.5, Cr = 0.12, LP = 0.08, Sty = 0.2, SB = 0.05 },
 		stats = { speed = { 58, 80 }, jump = { 55, 80 }, dressage = { 78, 98 }, stamina = { 65, 88 } } },
 	-- волшебные породы
 	pegasus = { name = "Пегас", weight = 0, home = "magic", hw = 1, size = 1.0, temper = 0.75, magic = { wings = "pegasus" },
@@ -179,23 +184,33 @@ function Genetics.randomGenotype(breed)
 end
 
 -- каждый родитель передаёт жеребёнку один случайный аллель из пары
+-- у старых лошадей новых генов (шампань, сплэш, сабино, налёт) нет — считаем, что оба аллеля «обычные»
+local NONE = { false, false }
 function Genetics.inherit(mother, father)
 	local g = {}
 	for _, l in ipairs(Genetics.LOCI) do
-		g[l] = { mother[l][math.random(1, 2)], father[l][math.random(1, 2)] }
+		local m, f = mother[l] or NONE, father[l] or NONE
+		g[l] = { m[math.random(1, 2)], f[math.random(1, 2)] }
 	end
 	return g
 end
 
-local function has(g, l) return g[l][1] or g[l][2] end
-local function cnt(g, l) return (g[l][1] and 1 or 0) + (g[l][2] and 1 or 0) end
+local function has(g, l)
+	local a = g[l]
+	return a ~= nil and (a[1] or a[2]) or false
+end
+local function cnt(g, l)
+	local a = g[l] or NONE
+	return (a[1] and 1 or 0) + (a[2] and 1 or 0)
+end
 
 -- текст вида «Ee aa Cr/n»
 function Genetics.genotypeText(g)
 	local parts = {}
 	for _, l in ipairs(Genetics.LOCI) do
 		local show
-		if l == "E" or l == "A" then show = true
+		if not g[l] then show = false
+		elseif l == "E" or l == "A" then show = true
 		elseif l == "F" then show = not (g.F[1] and g.F[2])
 		else show = has(g, l) end
 		if show then
@@ -241,6 +256,17 @@ function Genetics.phenotype(g, age)
 		else word, body, mane, legs = "вороная", "#232020", "#151313", "#151313"; rarity = 1.1 end
 	end
 
+	-- шампань: тело светлеет и становится золотистым, кожа розовая, глаза светлые
+	local champ = has(g, "Ch") and cr < 2
+	if champ then
+		if base == "ch" then word, body, mane, legs = "золотисто-шампанская", "#e2bf78", "#f4e8c6", "#d9b46a"
+		elseif base == "bay" then word, body, mane, legs = "янтарно-шампанская", "#cda16a", "#7a5634", "#8a6845"
+		else word, body, mane, legs = "классическая шампанская", "#a38c75", "#6e5a4a", "#7c6656" end
+		if cr == 1 then body = mix(body, "#f3e9d2", 0.35); word = word .. " (кремовая)" end
+		pinkSkin = true
+		rarity *= 1.5
+	end
+
 	if dun and cr < 2 then
 		stripe = base == "ch" and "#7a3c1c" or "#2a211b"
 		if cr == 0 then
@@ -254,7 +280,7 @@ function Genetics.phenotype(g, age)
 		rarity *= 1.15
 	end
 
-	if silver then
+	if silver and not champ then
 		if cr == 1 then
 			word = base == "bl" and "серебристо-дымчатая" or "серебристо-буланая"
 		else
@@ -296,6 +322,10 @@ function Genetics.phenotype(g, age)
 	if tob then table.insert(patterns, "пегая"); rarity *= 1.3 end
 	if leo then table.insert(patterns, "чубарая"); rarity *= 1.5 end
 	if roan then table.insert(patterns, "чалая"); rarity *= 1.2 end
+	local splash, sabino, sooty = has(g, "SW"), has(g, "SB"), has(g, "Sty") and base ~= "bl"
+	if splash then suffix ..= " (сплэш)"; rarity *= 1.4 end
+	if sabino and not splash then suffix ..= " (сабино)"; rarity *= 1.3 end
+	if sooty and greyLevel < 0.6 then suffix ..= " с тёмным налётом"; rarity *= 1.05 end
 
 	local name
 	if #patterns > 0 then
@@ -313,6 +343,7 @@ function Genetics.phenotype(g, age)
 	return {
 		name = name, body = body, mane = mane, legs = legs, stripe = stripe, roan = roan, tob = tob, leo = leo,
 		greyLevel = greyLevel, dapple = dapple, pinkSkin = pinkSkin, rarity = rarity,
+		splash = splash, sabino = sabino and not splash, sooty = sooty and greyLevel < 0.6, champ = champ,
 	}
 end
 

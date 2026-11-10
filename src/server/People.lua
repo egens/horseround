@@ -45,6 +45,28 @@ local function newRig(look)
 	return rig
 end
 
+-- кисти рук — цвета кожи, обувь — тёмная, у кого короткий рукав — предплечья тоже цвета кожи
+local function refine(rig, look)
+	local bc = rig:FindFirstChildOfClass("BodyColors")
+	if bc then bc:Destroy() end -- иначе цвета частей вернутся к цветам описания
+	local skin = color(look.skin or "#f2c9a5")
+	local shoes = color(look.shoes or "#3b2a20")
+	for _, n in ipairs({ "LeftHand", "RightHand" }) do
+		local p = rig:FindFirstChild(n)
+		if p then p.Color = skin end
+	end
+	if look.short then
+		for _, n in ipairs({ "LeftLowerArm", "RightLowerArm" }) do
+			local p = rig:FindFirstChild(n)
+			if p then p.Color = skin end
+		end
+	end
+	for _, n in ipairs({ "LeftFoot", "RightFoot" }) do
+		local p = rig:FindFirstChild(n)
+		if p then p.Color = shoes end
+	end
+end
+
 -- простая деталь, приваренная к голове или спине
 local function attach(rig, partName, size, offset, c, opts)
 	opts = opts or {}
@@ -58,6 +80,11 @@ local function attach(rig, partName, size, offset, c, opts)
 	p.CanQuery = false
 	p.Massless = true
 	if opts.shape then p.Shape = opts.shape end
+	if opts.round then
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Sphere
+		mesh.Parent = p
+	end
 	if opts.transparency then p.Transparency = opts.transparency end
 	p.CFrame = base.CFrame * offset
 	local w = Instance.new("WeldConstraint")
@@ -68,14 +95,33 @@ local function attach(rig, partName, size, offset, c, opts)
 	return p
 end
 
--- волосы и шляпа
+-- волосы и шляпа: причёска из округлых деталей (шапочка волос, затылок, чёлка, у длинных волос — хвост),
+-- воротник и ремень — человечки как в Roblox, но аккуратнее
 local function dress(rig, look)
 	local hair = look.hair or "#7a4a22"
 	local hat = look.hat or "none"
 	local hc = look.hatColor or "#555555"
-	if hat ~= "scarf" then attach(rig, "Head", Vector3.new(1.25, 0.35, 1.25), CFrame.new(0, 0.55, 0.05), hair) end
-	if hat == "none" or hat == "crown" then attach(rig, "Head", Vector3.new(1.2, 0.9, 0.3), CFrame.new(0, 0.15, 0.6), hair) end
-	if look.beard then attach(rig, "Head", Vector3.new(0.9, 0.4, 0.2), CFrame.new(0, -0.45, -0.6), hair) end
+	if hat ~= "scarf" then
+		attach(rig, "Head", Vector3.new(1.32, 0.62, 1.3), CFrame.new(0, 0.42, 0.06), hair, { round = true })
+		attach(rig, "Head", Vector3.new(1.26, 0.95, 0.42), CFrame.new(0, 0.05, 0.5), hair, { round = true })
+		if hat == "none" or hat == "crown" then
+			-- чёлка
+			attach(rig, "Head", Vector3.new(1.05, 0.28, 0.3), CFrame.new(0, 0.45, -0.52) * CFrame.Angles(-0.3, 0, 0), hair, { round = true })
+		end
+	end
+	if look.long and hat ~= "scarf" then
+		attach(rig, "Head", Vector3.new(1.2, 1.5, 0.35), CFrame.new(0, -0.35, 0.55), hair, { round = true })
+		attach(rig, "Head", Vector3.new(0.3, 1.1, 0.5), CFrame.new(-0.62, -0.2, 0.1), hair, { round = true })
+		attach(rig, "Head", Vector3.new(0.3, 1.1, 0.5), CFrame.new(0.62, -0.2, 0.1), hair, { round = true })
+	elseif look.ponytail and hat ~= "scarf" then
+		attach(rig, "Head", Vector3.new(0.4, 1.3, 0.4), CFrame.new(0, -0.15, 0.78) * CFrame.Angles(0.35, 0, 0), hair, { round = true })
+		attach(rig, "Head", Vector3.new(0.45, 0.22, 0.45), CFrame.new(0, 0.42, 0.72), look.bow or "#ff6fae")
+	end
+	if look.beard then attach(rig, "Head", Vector3.new(0.95, 0.5, 0.35), CFrame.new(0, -0.42, -0.5), hair, { round = true }) end
+	-- воротник и ремень
+	attach(rig, "UpperTorso", Vector3.new(1.3, 0.22, 0.9), CFrame.new(0, 0.85, 0), look.collar or "#f8f9fa")
+	attach(rig, "LowerTorso", Vector3.new(2.05, 0.22, 1.05), CFrame.new(0, 0.2, 0), look.belt or "#3b2a20")
+	attach(rig, "LowerTorso", Vector3.new(0.32, 0.26, 0.08), CFrame.new(0, 0.2, -0.53), "#ffd43b", { material = Enum.Material.Metal })
 	if hat == "cap" then
 		attach(rig, "Head", Vector3.new(1.3, 0.35, 1.3), CFrame.new(0, 0.7, 0), hc)
 		attach(rig, "Head", Vector3.new(1, 0.12, 0.6), CFrame.new(0, 0.55, -0.85), hc)
@@ -132,6 +178,7 @@ function People.build(parent)
 				hum.NameDisplayDistance = 120
 				hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
 			end
+			refine(rig, n.look)
 			dress(rig, n.look)
 			if n.fairy then
 				for _, s in ipairs({ -1, 1 }) do
@@ -146,8 +193,56 @@ function People.build(parent)
 					end
 				end
 			end
-			placeOnGround(rig, n.x, n.y, math.pi / 2)
+			placeOnGround(rig, n.x, n.y, n.face or math.pi / 2)
 			rig.Parent = folder
+			playIdle(rig)
+		end
+	end
+	-- люди на рынке: продавцы за прилавками и покупатели перед ними
+	local rnd = Util.rng(2024)
+	local SHIRTS = { "#e8590c", "#2b8a3e", "#1c7ed6", "#c2255c", "#f59f00", "#6741d9", "#0b7285", "#e03131", "#f8f9fa", "#495057" }
+	local PANTS = { "#343a40", "#1864ab", "#5c3d2e", "#495057", "#2b2b2b", "#e9e0cc" }
+	local HAIRS = { "#2b1a10", "#5a3d2b", "#d4a017", "#a0522d", "#1b1b1b", "#e8c07a", "#c0c0c0" }
+	local SKINS = { "#f2c9a5", "#e0ac83", "#c68b5e", "#8d5a3b", "#f7d7bd" }
+	local HATS = { "none", "none", "cap", "hat", "none", "scarf" }
+	local function crowdLook()
+		local hat = HATS[math.floor(rnd() * #HATS) + 1]
+		return {
+			shirt = SHIRTS[math.floor(rnd() * #SHIRTS) + 1], pants = PANTS[math.floor(rnd() * #PANTS) + 1], hair = HAIRS[math.floor(rnd() * #HAIRS) + 1],
+			skin = SKINS[math.floor(rnd() * #SKINS) + 1], hat = hat, hatColor = SHIRTS[math.floor(rnd() * #SHIRTS) + 1], short = rnd() < 0.5,
+			long = rnd() < 0.3, ponytail = rnd() < 0.3, beard = rnd() < 0.15, apron = nil,
+		}
+	end
+	local crowd = Instance.new("Folder")
+	crowd.Name = "Crowd"
+	crowd.Parent = parent
+	local spots = {}
+	for i, st in ipairs(World.MARKET_STALLS) do
+		-- продавец за прилавком (смотрит на покупателей)
+		table.insert(spots, { x = st.x + st.w * (0.3 + (i % 2) * 0.4), y = st.y - 14, a = math.pi, apron = true })
+		-- покупатели перед стойкой
+		local fr = World.stallFront(st)
+		if i % 2 == 1 then table.insert(spots, { x = fr.x - 35, y = fr.y - 18, a = 0.3 }) end
+		table.insert(spots, { x = fr.x + 40, y = fr.y + 10, a = -0.4 })
+	end
+	-- гуляющие по площади
+	local Mk = World.MARKET
+	for k = 1, 4 do table.insert(spots, { x = Mk.x + 60 + k * 120, y = Mk.y + Mk.h - 40 - (k % 2) * 30, a = rnd() * 6.28 }) end
+	for _, q in ipairs(spots) do
+		local look = crowdLook()
+		if q.apron then look.apron = "#f1e3c6" end
+		local rig = newRig(look)
+		if rig then
+			rig.Name = "Shopper"
+			local hum = rig:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+				hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+			end
+			refine(rig, look)
+			dress(rig, look)
+			placeOnGround(rig, q.x, q.y, q.a)
+			rig.Parent = crowd
 			playIdle(rig)
 		end
 	end

@@ -339,7 +339,8 @@ function Horses.pheno(h)
 		local el = elemLook(h) or magicLook(h)
 		if el then
 			local rarity = ph.rarity * (el.rarityMul or 1)
-			ph = Util.assign({}, ph, el, { stripe = false, roan = false, tob = false, leo = false, dapple = false, greyLevel = 0, pinkSkin = false, rarity = rarity })
+			ph = Util.assign({}, ph, el, { stripe = false, roan = false, tob = false, leo = false, dapple = false, greyLevel = 0, pinkSkin = false, rarity = rarity,
+				splash = false, sabino = false, sooty = false, champ = false })
 			if ph.stripe == false then ph.stripe = nil end
 		end
 		h._ph = ph

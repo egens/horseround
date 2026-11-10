@@ -54,17 +54,26 @@ local function mounted()
 	local c = char()
 	return c ~= nil and c:FindFirstChild("Mount") ~= nil
 end
+local swim = nil -- плывём верхом (ниже)
 local function updateFoot()
 	local c, hum, root = char(), humanoid(), hrp()
 	if not c or not hum then return end
 	-- на всякий случай: персонаж не должен оставаться закреплённым или «без ног» после телепорта или полёта
 	if root and root.Anchored then root.Anchored = false end
-	if not fly and hum.PlatformStand then hum.PlatformStand = false end
+	if not fly and not swim and hum.PlatformStand then hum.PlatformStand = false end
 	local speed, jump
 	if mounted() or c:GetAttribute("Flying") then
-		speed, jump = c:GetAttribute("RideSpeed") or 0, c:GetAttribute("RideJump") or 0
+		-- верхом тоже можно прыгать (Пробел или кнопка прыжка на телефоне)
+		speed, jump = c:GetAttribute("RideSpeed") or 0, math.max(c:GetAttribute("RideJump") or 0, (c:GetAttribute("Flying") or swim) and 0 or 6)
 	else
 		speed, jump = sprint and RUN or WALK, JUMP_H
+	end
+	-- верхом и в полёте не слышно шагов человечка (слышно только копыта, а в полёте — тихо)
+	local run = root and root:FindFirstChild("Running")
+	if run and run:IsA("Sound") then
+		if run:GetAttribute("Vol0") == nil then run:SetAttribute("Vol0", run.Volume) end
+		local want = (mounted() or c:GetAttribute("Flying")) and 0 or run:GetAttribute("Vol0")
+		if run.Volume ~= want then run.Volume = want end
 	end
 	if hum.WalkSpeed ~= speed then hum.WalkSpeed = speed end
 	if hum.UseJumpPower then hum.UseJumpPower = false end
@@ -149,14 +158,70 @@ local function updateFly(dt)
 	if flyKeys.up then vy = 16 elseif flyKeys.down then vy = -16 end
 	if fly.t < 0.8 then vy = 18 end
 	local alt = root.Position.Y
-	if alt > 320 and vy > 0 then vy = 0 end
+	if alt > World.SKY_Y + 200 and vy > 0 then vy = 0 end
 	local px, py = World.fromStuds(root.Position)
 	local gy = World.groundY(px, py)
 	if alt < gy + 4 and vy < 0 then vy = 0 end
-	fly.lv.VectorVelocity = Vector3.new(move.X * speed, vy, move.Z * speed)
+	-- разгон в полёте плавный; с Shift (быстрый полёт) лошадь ускоряется
+	local want = Vector3.new(move.X * speed, vy, move.Z * speed)
+	fly.v = fly.v and fly.v:Lerp(want, math.min(1, dt * 2.5)) or want
+	fly.lv.VectorVelocity = fly.v
 	if move.Magnitude > 0.05 then
 		fly.ao.CFrame = CFrame.lookAt(Vector3.zero, Vector3.new(move.X, 0, move.Z))
 	end
+end
+
+--[[ ---------- плавание верхом ----------
+	В глубокой воде плывёт лошадь: персонаж держится в седле над водой (никакой анимации «плавания»
+	человечка), лошадь гребёт ногами (поза — в HorseBuilder), скорость в воде меньше. ]]
+local function stopSwim()
+	if not swim then return end
+	swim.lv:Destroy()
+	swim.ao:Destroy()
+	swim.att:Destroy()
+	swim = nil
+	local hum = humanoid()
+	if hum then hum.PlatformStand = false end
+	local c = char()
+	if c then c:SetAttribute("Swimming", nil) end
+end
+local function updateSwim(dt)
+	local c, root, hum = char(), hrp(), humanoid()
+	local rec = Render.mountRec and Render.mountRec(player)
+	if not c or not root or not hum or not mounted() or c:GetAttribute("Flying") or not rec then return stopSwim() end
+	local wy, fy = Render.waterAt(root.Position)
+	local V = rec.e.V
+	local deep = wy ~= nil and (wy - fy) > 13 * V - 1.2
+	if not deep then return stopSwim() end
+	if not swim then
+		local att = Instance.new("Attachment")
+		att.Name = "SwimAtt"
+		att.Parent = root
+		local lv = Instance.new("LinearVelocity")
+		lv.Attachment0 = att
+		lv.MaxForce = 1e6
+		lv.RelativeTo = Enum.ActuatorRelativeTo.World
+		lv.VectorVelocity = Vector3.zero
+		lv.Parent = root
+		local ao = Instance.new("AlignOrientation")
+		ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
+		ao.Attachment0 = att
+		ao.MaxTorque = 1e6
+		ao.Responsiveness = 15
+		ao.CFrame = root.CFrame - root.Position
+		ao.Parent = root
+		hum.PlatformStand = true
+		swim = { att = att, lv = lv, ao = ao }
+		c:SetAttribute("Swimming", true)
+	end
+	-- спина лошади чуть над водой
+	local hip = hum.HipHeight + (hum.RigType == Enum.HumanoidRigType.R6 and 2 or 0)
+	local targetY = wy - (13 * V - 0.8) + hip + root.Size.Y / 2
+	local move = hum.MoveDirection
+	local sp = math.max(8, hum.WalkSpeed * 0.55)
+	local vy = math.clamp((targetY - root.Position.Y) * 5, -14, 14) + math.sin(os.clock() * 2.4) * 0.4
+	swim.lv.VectorVelocity = Vector3.new(move.X * sp, vy, move.Z * sp)
+	if move.Magnitude > 0.05 then swim.ao.CFrame = CFrame.lookAt(Vector3.zero, Vector3.new(move.X, 0, move.Z)) end
 end
 
 --[[ ---------- клавиши ---------- ]]
@@ -243,27 +308,35 @@ local function onClick(input, processed)
 	if id and kind == "horse" then State.act("lasso", id) end
 end
 
+local sentSprint = false
 function Controls.update(dt)
 	updateSit()
 	updateFly(dt)
+	updateSwim(dt)
 	updateFoot()
+	-- быстрый галоп (и быстрый полёт): Shift верхом. Сервер ускоряет лошадь, она устаёт быстрее
+	local wantSprint = sprint and mounted()
+	if wantSprint ~= sentSprint then
+		sentSprint = wantSprint
+		State.act("sprint", wantSprint)
+	end
 	liftT = math.max(0, liftT - dt)
 	Render.riderLift = liftT > 0 and 0.35 or 0
-	-- кнопка бега на телефоне (пешком)
-	local foot = char() ~= nil and not mounted()
-	if foot ~= Controls.runButton and UserInputService.TouchEnabled then
-		Controls.runButton = foot
-		if foot then
+	-- кнопка бега на телефоне (пешком — бег, верхом — быстрый галоп)
+	local mode = char() ~= nil and (mounted() and "ride" or "foot") or nil
+	if mode ~= Controls.runButton and UserInputService.TouchEnabled then
+		Controls.runButton = mode
+		ContextActionService:UnbindAction("Run")
+		sprint = false
+		if mode then
+			local on, off = mode == "ride" and "🐎" or "🚶", mode == "ride" and "⚡" or "🏃"
 			ContextActionService:BindAction("Run", function(_, state)
 				if state == Enum.UserInputState.Begin then sprint = not sprint end
-				ContextActionService:SetTitle("Run", sprint and "🚶" or "🏃")
+				ContextActionService:SetTitle("Run", sprint and on or off)
 				return Enum.ContextActionResult.Sink
 			end, true)
-			ContextActionService:SetTitle("Run", sprint and "🚶" or "🏃")
+			ContextActionService:SetTitle("Run", off)
 			ContextActionService:SetPosition("Run", UDim2.new(1, -200, 1, -130))
-		else
-			ContextActionService:UnbindAction("Run")
-			sprint = false
 		end
 	end
 	-- кнопки полёта на телефоне

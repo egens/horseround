@@ -515,7 +515,7 @@ function HB.pose(e, o)
 	if o.gait then e.gaitS = o.gait end
 	local G = GAITS[gait] or GAITS[0]
 	-- насколько лошадь идёт (0 — стоит): плавно, чтобы ноги не дёргались при остановке
-	local moving = (spd > 8 and fly <= 0 and not A and lift <= 0) and 1 or 0
+	local moving = (spd > 8 and fly <= 0 and not A and lift <= 0 and (o.swim or 0) <= 0) and 1 or 0
 	e.moveS = (e.moveS or 0) + (moving - (e.moveS or 0)) * math.min(1, dt * 6)
 	local mv = e.moveS
 	-- фаза цикла: частота по скорости и длине шага аллюра
@@ -544,17 +544,33 @@ function HB.pose(e, o)
 	local px, py = A and A.px * K or 0, A and A.py * K or 0
 	e.contentM.C0 = CFrame.new(px, py, 0) * CFrame.Angles(A and A.roll or 0, 0, A and A.pitch or 0) * CFrame.new(-px, -py, 0)
 	local headYaw = A and A.headYaw or (o.headTurn or 0) * 0.7
-	e.headM.C0 = CFrame.new(e.HP) * CFrame.Angles(0, headYaw, (A and A.head or 0) + gnod - slope * 0.4 + (fly > 0 and 0.15 or 0))
+	local swimHead = ((o.swim or 0) > 0 and fly <= 0) and 0.35 or 0
+	e.headM.C0 = CFrame.new(e.HP) * CFrame.Angles(0, headYaw, (A and A.head or 0) + gnod - slope * 0.4 + (fly > 0 and 0.15 or 0) + swimHead)
 	e.earsM.C0 = CFrame.new(e.EP - e.HP) * CFrame.Angles(0, 0, A and -A.ears or 0)
 	local kk = math.min(1, dt * 20)
+	-- плывёт: ноги гребут под водой (передние — далеко вперёд с подогнутыми коленями), голова поднята
+	local swim = (o.swim or 0) > 0 and fly <= 0
+	if swim then
+		e.swimC = ((e.swimC or 0) + dt * (spd > 8 and 1.3 or 0.7)) % 1
+	end
 	for i, l in ipairs(e.legs) do
 		local r, kn
 		if fly > 0 then
 			r = (l.front and 0.7 or -0.5) * fly
 			kn = (l.front and -1.0 or 0.7) * fly
+		elseif swim and not (A and A.legs) then
+			local su = (e.swimC + ({ 0, 0.5, 0.5, 0 })[i]) % 1
+			local v = math.sin(su * math.pi * 2)
+			if l.front then
+				r = 0.35 + v * 0.65
+				kn = -(0.55 + math.max(0, -v) * 0.8)
+			else
+				r = -0.15 + v * 0.5
+				kn = 0.25 + math.max(0, v) * 0.6
+			end
 		elseif A and A.legs then
 			r = A.legs[i] or 0
-			kn = l.front and -math.max(0, r) * 0.9 or 0
+			kn = (A.knees and A.knees[i]) or (l.front and -math.max(0, r) * 0.9 or 0)
 		elseif lift > 0 then
 			r = (l.front and 0.9 or -0.6) * lift
 			kn = (l.front and -1.3 or 0.9) * lift
@@ -568,8 +584,11 @@ function HB.pose(e, o)
 		l.m.C0 = CFrame.new(l.pos) * CFrame.Angles(0, 0, l.r)
 		if l.km then l.km.C0 = CFrame.new(l.kOff) * CFrame.Angles(0, 0, l.k) end
 	end
-	local ty = math.sin(t * 2.2 + (e.seed % 7)) * 0.35
-	local tz = mv * (0.3 + gait * 0.2) + fly * 0.4 + ((A and A.k == "kick") and 0.6 or 0)
+	-- хвост покачивается, а время от времени лошадь резко машет им (отгоняет мух)
+	local burst = math.max(0, math.sin(t * 0.33 + (e.seed % 13))) ^ 10
+	local ty = math.sin(t * 2.2 + (e.seed % 7)) * 0.35 + math.sin(t * 9 + (e.seed % 5)) * 0.75 * burst * (1 - mv)
+	if A and A.tail then ty = A.tail end
+	local tz = mv * (0.3 + gait * 0.2) + fly * 0.4 + ((A and A.k == "kick") and 0.6 or 0) + (swim and 0.5 or 0) + burst * 0.25 * (1 - mv)
 	e.tailM.C0 = CFrame.new(e.TP) * CFrame.Angles(0, ty, tz)
 	local move = math.min(1, spd / 110)
 	for _, w in ipairs(e.wings) do

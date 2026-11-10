@@ -125,7 +125,11 @@ function Riding.applySpeed(sess)
 	local m = G.mounted(sess)
 	local p = sess.p
 	local v = 0
-	if m and not m.act then v = Riding.gaitSpeed(m, p.gait) * (p.fly and 1.3 or 1) end
+	if m and not m.act then
+		v = Riding.gaitSpeed(m, p.gait) * (p.fly and 1.3 or 1)
+		-- быстрый галоп (Shift на галопе) и быстрый полёт (Shift в полёте)
+		if p.sprint and m.energy > 8 and (p.gait == 2 or p.fly) then v *= p.fly and 1.5 or 1.38 end
+	end
 	if sess.race and sess.race.state == "countdown" then v = 0 end
 	local want = math.floor(v * K * 100 + 0.5) / 100
 	local jh = (m and sess.ex and sess.ex.type == "jump") and 4 or 0
@@ -186,6 +190,7 @@ function Riding.update(sess, dt)
 		end
 		local moving = p.spd > 10
 		local drain = ({ 0.12, 0.55, 1.5 })[p.gait + 1] * (1.4 - Horses.skill(m, "stamina") / 125)
+		if p.sprint and (p.gait == 2 or p.fly) then drain *= 1.8 end
 		m.energy = clamp(m.energy - dt * (moving and drain or -0.4), 0, 100)
 		if moving and p.gait > 0 then Horses.addTrain(m, "stamina", dt * 0.004) end
 		if moving and p.gait == 2 then Horses.addTrain(m, "speed", dt * 0.005) end
@@ -226,7 +231,7 @@ function Riding.mount(sess, h)
 	Riding.applyHip(sess)
 	Riding.applyLook(sess)
 	G.R.Open:FireClient(sess.player, "close")
-	G.toast(sess, "🏇 Ты в седле! " .. h.name .. " ждёт команды. Аллюры: 1 — шаг, 2 — рысь, 3 — галоп")
+	G.toast(sess, "🏇 Ты в седле! " .. h.name .. " ждёт команды. Аллюры: 1 — шаг, 2 — рысь, 3 — галоп, на галопе Shift — быстрый галоп. Пробел — прыжок")
 	G.dirty(sess)
 end
 
@@ -271,7 +276,9 @@ function Riding.toggleFly(sess)
 		return G.toast(sess, "Летать умеют лошади с крыльями (пегасы, бабочки, драконы, вороны, стрекозы, пчёлки) и облачные лошадки")
 	end
 	if p.fly then
-		if World.blocked(p.x, p.y, 20) then return G.toast(sess, "Здесь не приземлиться — найди ровное место", "warn") end
+		-- приземлиться можно где угодно: на землю, на дерево рядом (лошадь сойдёт), в воду (поплывёт).
+		-- Нельзя только над пустотой у небесных островов — там под копытами ничего нет
+		if p.y > World.H and not World.skyWalkable(p.x, p.y, 0) then return G.toast(sess, "Под тобой облака и пустота — подлети к острову или мосту", "warn") end
 		p.fly = false
 		G.toast(sess, "🕊️ " .. m.name .. " мягко " .. Horses.v(m, "приземлилась", "приземлился"))
 	else

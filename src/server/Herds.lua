@@ -192,7 +192,9 @@ function Herds.tickAct(h, dt, canBack)
 	end
 	if h.act.t >= h.act.d then h.act = nil end
 end
-local IDLE = { { "graze", 6 }, { "lookUp", 1 }, { "ears", 1 }, { "liftLeg", 1 }, { "neigh", 0.5 }, { "roll", 0.35 }, { "kick", 0.45 }, { "scratch", 0.6 }, { "lookDown", 0.7 }, { "dance", 0.12 }, { "bow", 0.3 } }
+-- лошади не просто стоят: пасутся, копают ногой, вскидывают голову, машут хвостом, отряхиваются, валяются…
+local IDLE = { { "graze", 6 }, { "lookUp", 1 }, { "ears", 1 }, { "liftLeg", 1 }, { "neigh", 0.5 }, { "roll", 0.35 }, { "kick", 0.45 }, { "scratch", 0.6 },
+	{ "lookDown", 0.7 }, { "dance", 0.12 }, { "bow", 0.3 }, { "paw", 1.1 }, { "toss", 0.9 }, { "shake", 0.7 }, { "swish", 1.6 } }
 Herds.IDLE = IDLE
 function Herds.idleAct(h, dt, rate, lst)
 	if h.act or math.random() > dt * (rate or 0.1) then return end
@@ -241,7 +243,7 @@ function Herds.update(dt)
 				if p then
 					local pp = p.p
 					local m = pp.mountId ~= nil
-					local fleeR = 70 + w.temper * 170
+					local fleeR = (70 + w.temper * 170) * (1 + 0.35 * Herds.valueOf(w))
 					if sleepy then fleeR *= 0.6 end
 					if m and pp.gait == 2 then fleeR *= 1.2 end
 					if m and pp.gait == 0 then fleeR *= 0.8 end
@@ -298,7 +300,7 @@ function Herds.update(dt)
 						end
 						tx, ty, sp = w.x, w.y, 0
 						w.headTurn = math.sin(t * 0.8 + w.seed) * 0.35
-						if (w.fly or 0) <= 0 then Herds.idleAct(w, dt, 0.11) end
+						if (w.fly or 0) <= 0 then Herds.idleAct(w, dt, 0.16) end
 					end
 				end
 				if w.x < F.x + 40 then tx = math.max(tx, F.x + 120) end
@@ -321,6 +323,7 @@ function Herds.update(dt)
 				end
 				if w.act and w.flee <= 0 then tx, ty, sp = w.x, w.y, 0 end
 				Herds.tickAct(w, dt, true)
+				local x0, y0 = w.x, w.y
 				Herds.moveToward(w, tx, ty, sp, dt, w.flee > 0 and 4 or 2)
 				for _, o in ipairs(members) do
 					if o ~= w then
@@ -335,6 +338,24 @@ function Herds.update(dt)
 				if w.fly <= 0 then World.collide(w, 18) end
 				w.x = clamp(w.x, F.x - 60, F.x + F.w + 60)
 				w.y = clamp(w.y, F.y - 60, F.y + F.h + 60)
+				-- застряла (хочет идти, а стоит на месте — упёрлась в камень, дерево или забор)?
+				-- выбираем другое место и обходим препятствие сбоку
+				if sp > 30 and w.fly <= 0 and dt > 0 then
+					local moved = hypot(w.x - x0, w.y - y0)
+					if moved < sp * dt * 0.25 then w.stuck = (w.stuck or 0) + dt else w.stuck = math.max(0, (w.stuck or 0) - dt) end
+					if (w.stuck or 0) > 1.0 then
+						w.stuck = 0
+						w.slot = { x = rand(-150, 150), y = rand(-110, 110) }
+						if w.goal then w.goal = Herds.randomPoint(120, F) end
+						local a = (w.angle or 0) + (math.random() < 0.5 and 1.6 or -1.6)
+						w.x += math.cos(a) * 26
+						w.y += math.sin(a) * 26
+						w.vx, w.vy = math.cos(a) * 40, math.sin(a) * 40
+						World.collide(w, 18)
+					end
+				else
+					w.stuck = 0
+				end
 			end
 		end
 		-- новые лошади приходят взамен пойманных
@@ -395,6 +416,14 @@ function Herds.pinkDragonRain()
 end
 
 --[[ ---------- лассо ---------- ]]
+-- ценность дикой лошади от 0 (обычная) до 1 (очень дорогая и редкая) — по цене, кешируется
+function Herds.valueOf(w)
+	if not w._val then
+		local p = Horses.price(w)
+		w._val = math.clamp((p - 180) / 1400, 0, 1) ^ 0.7
+	end
+	return w._val
+end
 function Herds.nearestCatchable(sess)
 	if sess.led or sess.ex or sess.lasso then return nil end
 	local best, bd = nil, LASSO_RANGE
@@ -412,7 +441,9 @@ function Herds.startLasso(sess, w)
 	if sess.led then G.toast(sess, "Сначала отведи пойманную лошадь в конюшню"); return end
 	if not w or (sess.lassoCd or 0) > 0 or sess.lasso or w.lassoBy then return end
 	if hypot(w.x - sess.p.x, w.y - sess.p.y) > LASSO_RANGE + 40 then return end
-	local zone = 0.24 * (P.tack.goodLasso and 1.5 or 1) * (1.25 - w.temper * 0.6)
+	-- чем лучше (дороже, редче, волшебнее) лошадь, тем сложнее её поймать: зелёная зона уже, стрелка быстрее
+	local val = Herds.valueOf(w)
+	local zone = 0.24 * (P.tack.goodLasso and 1.5 or 1) * (1.25 - w.temper * 0.6) * (1 - 0.5 * val)
 	local bait = nil
 	if (P.inv.carrot or 0) > 0 then bait = "carrot"
 	elseif (P.inv.apple or 0) > 0 then bait = "apple" end
@@ -426,7 +457,7 @@ function Herds.startLasso(sess, w)
 	local l = {
 		w = w, zone = zone, bait = bait,
 		center = rand(zone / 2 + 0.04, 1 - zone / 2 - 0.04),
-		speed = 0.55 + w.temper * 1.0,
+		speed = (0.55 + w.temper * 1.0) * (1 + 0.7 * val),
 		start = workspace:GetServerTimeNow(),
 	}
 	sess.lasso = l
@@ -434,7 +465,8 @@ function Herds.startLasso(sess, w)
 	local ph = Horses.pheno(w)
 	G.R.Lasso:FireClient(sess.player, {
 		who = w.name .. " — " .. string.lower(Genetics.BREEDS[w.breed].name) .. ", " .. ph.name .. ", " .. Horses.sexText(w),
-		temper = w.temper < 0.35 and "Нрав: спокойная 😌" or w.temper < 0.6 and "Нрав: обычная 🙂" or "Нрав: горячая 🔥",
+		temper = (w.temper < 0.35 and "Нрав: спокойная 😌" or w.temper < 0.6 and "Нрав: обычная 🙂" or "Нрав: горячая 🔥")
+			.. (val > 0.66 and " · 💎 очень ценная — поймать трудно!" or val > 0.33 and " · ⭐ ценная — ловить сложнее" or ""),
 		bait = bait and (bait == "carrot" and "🥕 Морковка помогает!" or "🍎 Яблоко помогает!") or "",
 		zone = zone, center = l.center, speed = l.speed, start = l.start,
 	})
@@ -469,6 +501,10 @@ function Herds.resolveLasso(sess, clientPos)
 		sess.led = w
 		G.modules.Owned.attachLed(sess, w)
 		P.stats.caught = (P.stats.caught or 0) + 1
+		P.caughtBreeds = P.caughtBreeds or {}
+		local first = not P.caughtBreeds[w.breed]
+		P.caughtBreeds[w.breed] = (P.caughtBreeds[w.breed] or 0) + 1
+		if first then G.toast(sess, "📖 Новая порода в индексе: " .. Genetics.BREEDS[w.breed].name .. "!", "good") end
 		if Horses.isMagic(w) then G.stat(sess, "magicCaught") end
 		if w.magic and w.magic.wings then G.stat(sess, "wing_" .. Horses.wingType(w.magic.wings)) end
 		if w.magic and (Horses.wingType(w.magic.wings) == "bee" or Horses.wingType(w.magic.wings) == "dragonfly") then G.stat(sess, "wingSmall") end
