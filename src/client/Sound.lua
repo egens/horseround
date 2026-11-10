@@ -33,11 +33,15 @@ local IDS = {
 }
 Sound.IDS = IDS
 
--- звуки из библиотеки Roblox: берётся первый, который загрузился
+-- звуки из библиотеки Roblox: берётся первый, который загрузился.
+-- После 2022 года многие чужие звуки в Roblox закрыты, поэтому для надёжности загрузите свои
+-- (Creator Hub → Audio) и впишите rbxassetid:// первым в нужный список.
 local LIB = {
 	neigh = { "rbxassetid://196261753", "rbxassetid://3300268804", "rbxassetid://6067768736" },
 	rain = { "rbxassetid://1516791621", "rbxassetid://184352854", "rbxassetid://2304892796" },
-	music = {}, -- сюда можно вписать rbxassetid:// спокойной музыки; пока пусто — играют «колокольчики»
+	birds = {},   -- пение птиц днём (если пусто — птиц не слышно)
+	crickets = {}, -- сверчки ночью
+	music = {},   -- спокойная музыка (если пусто — тишина)
 }
 Sound.LIB = LIB
 local libOk = {} -- [name] = id, который загрузился
@@ -56,6 +60,7 @@ local function preloadLib()
 				end)
 				if ok then
 					libOk[name] = id
+					print("[HorseFarm] звук «" .. name .. "»: " .. id)
 					s:Destroy()
 					return
 				end
@@ -81,25 +86,27 @@ local function play(id, speed, volume, delay)
 	return s
 end
 
--- запасное ржание без библиотеки: дрожащий звук, который взлетает вверх и спускается с «фырканьем»
+-- запасное ржание без библиотеки: голосовой звук движка, высоко и с дрожью (вибрато),
+-- тон взлетает и спускается «и-го-го», в конце — фырканье. Раньше здесь был электронный «пинг» — он пиликал.
 local function synthNeigh(vol)
-	vol = vol or 0.3
-	local s = play(IDS.ping, 1.1, vol)
+	vol = vol or 0.6
+	local s = play(IDS.ghost, 1.55, vol)
 	if s then
-		TweenService:Create(s, TweenInfo.new(0.18), { PlaybackSpeed = 2.2 }):Play()
+		local t0 = os.clock()
 		task.spawn(function()
-			local t0 = os.clock()
-			while s.Parent and os.clock() - t0 < 1.1 do
-				-- дрожь голоса
-				s.PlaybackSpeed = s.PlaybackSpeed * (1 + math.sin((os.clock() - t0) * 70) * 0.04)
+			while s.Parent and os.clock() - t0 < 1.3 do
+				local t = os.clock() - t0
+				-- контур высоты: подъём, «гого» с переливами, спуск
+				local base = t < 0.15 and (1.55 + t * 4) or (2.15 - (t - 0.15) * 0.65)
+				s.PlaybackSpeed = math.max(0.9, base * (1 + math.sin(t * 2 * math.pi * 13) * 0.07))
+				s.Volume = vol * (0.75 + 0.25 * math.sin(t * 2 * math.pi * 6.5)) * math.clamp((1.3 - t) / 0.4, 0, 1)
 				task.wait()
 			end
-		end)
-		task.delay(0.2, function()
-			if s.Parent then TweenService:Create(s, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { PlaybackSpeed = 0.7, Volume = 0 }):Play() end
+			if s.Parent then s:Stop() s:Destroy() end
 		end)
 	end
-	play(IDS.swoosh, 0.55, vol * 0.8, 1.05) -- фырканье в конце
+	play(IDS.swoosh, 0.5, vol * 0.7, 1.15) -- фырканье в конце
+	play(IDS.swoosh, 0.42, vol * 0.5, 1.32)
 end
 
 local handlers = {
@@ -130,7 +137,7 @@ local handlers = {
 		if id then
 			play(id, 0.95 + math.random() * 0.12, 0.7 * vol)
 		else
-			synthNeigh(0.3 * vol)
+			synthNeigh(0.6 * vol)
 		end
 	end,
 }
@@ -187,6 +194,24 @@ local function updateHooves(dt)
 	end
 end
 
+--[[ ---------- плавание: всплески в озере ---------- ]]
+local swimT = 0
+local function updateSwim(dt)
+	local ch = player.Character
+	local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	if hum:GetState() == Enum.HumanoidStateType.Swimming then
+		swimT -= dt
+		if swimT <= 0 then
+			swimT = 0.7 + math.random() * 0.4
+			local moving = hum.MoveDirection.Magnitude > 0.1
+			play(IDS.splash, 0.9 + math.random() * 0.3, moving and 0.3 or 0.12)
+		end
+	else
+		swimT = 0
+	end
+end
+
 --[[ ---------- дождь ---------- ]]
 local rain
 local function updateRain(dt)
@@ -195,8 +220,7 @@ local function updateRain(dt)
 	if not rain then
 		local id = libOk.rain
 		if not id then
-			-- запасной дождь: частые тихие капли
-			if want and math.random() < dt * 40 * wet then play(IDS.ping, 2.6 + math.random() * 1.2, 0.015 + math.random() * 0.02) end
+			-- без звука дождя из библиотеки — тишина (раньше «капли» пиликали)
 			return
 		end
 		rain = Instance.new("Sound")
@@ -210,23 +234,10 @@ local function updateRain(dt)
 	rain.Volume += (target - rain.Volume) * math.min(1, dt * 1.5)
 end
 
---[[ ---------- природа: птицы, сверчки, ветер ---------- ]]
+--[[ ---------- природа: птицы, сверчки, ветер ----------
+	Птицы и сверчки — только настоящими звуками из LIB (birds, crickets). Синтез из «пинга»
+	убран: он звучал как пиликание. Ветер — мягкий шум. ]]
 local natureT = 3
-local function chirp()
-	local base = 2.4 + math.random() * 1.2
-	local n = math.random(2, 5)
-	for i = 0, n - 1 do
-		local s = play(IDS.ping, base, 0.035 + math.random() * 0.025, i * (0.09 + math.random() * 0.05))
-		if s then
-			task.delay(i * 0.1, function()
-				if s.Parent then TweenService:Create(s, TweenInfo.new(0.07), { PlaybackSpeed = base * (1.15 + math.random() * 0.2) }):Play() end
-			end)
-		end
-	end
-end
-local function cricket()
-	for i = 0, 5 do play(IDS.ping, 3.6, 0.012, i * 0.045) end
-end
 local function updateNature(dt)
 	natureT -= dt
 	if natureT > 0 or not Sound.on then return end
@@ -235,58 +246,30 @@ local function updateNature(dt)
 	local clock = Lighting.ClockTime
 	local night = clock < 5.5 or clock > 20.5
 	local raining = (State.world.wet or 0) > 0.2
-	if underground then
-		natureT = 6 + math.random() * 6
-		play(IDS.ping, 0.9 + math.random() * 0.3, 0.02) -- капли в пещере
-		return
+	natureT = 5 + math.random() * 6
+	if underground then return end
+	if night and libOk.crickets then
+		play(libOk.crickets, 1, 0.15)
+	elseif not night and not raining and reg ~= "desert" and libOk.birds then
+		play(libOk.birds, 0.95 + math.random() * 0.1, 0.18)
 	end
-	if night then
-		natureT = 1.5 + math.random() * 2.5
-		cricket()
-	elseif not raining and reg ~= "desert" then
-		natureT = 2.5 + math.random() * 5
-		chirp()
-	else
-		natureT = 4 + math.random() * 4
-	end
-	if math.random() < 0.12 then play(IDS.swoosh, 0.25 + math.random() * 0.1, 0.06) end -- ветер
+	if math.random() < 0.15 then play(IDS.swoosh, 0.25 + math.random() * 0.1, 0.05) end -- ветер
 end
 
---[[ ---------- тихая музыка природы ----------
-	Если в LIB.music есть загрузившийся трек — играет он (тихо, по кругу).
-	Иначе — «колокольчики»: медленные ноты пентатоники с паузами, каждая фраза своя. ]]
+--[[ ---------- тихая музыка ----------
+	Играет, только если в LIB.music есть загрузившийся трек. ]]
 local music
-local PENTA = { 1, 1.122, 1.26, 1.498, 1.682, 2, 2.245, 2.52 }
-local musicT = 4
-local function updateMusic(dt)
-	if libOk.music then
-		if not music then
-			music = Instance.new("Sound")
-			music.SoundId = libOk.music
-			music.Looped = true
-			music.Volume = 0.12
-			music.Parent = SoundService
-			music:Play()
-		end
-		music.Volume = Sound.on and 0.12 or 0
-		return
+local function updateMusic()
+	if not libOk.music then return end
+	if not music then
+		music = Instance.new("Sound")
+		music.SoundId = libOk.music
+		music.Looped = true
+		music.Volume = 0.12
+		music.Parent = SoundService
+		music:Play()
 	end
-	if not Sound.on then return end
-	musicT -= dt
-	if musicT > 0 then return end
-	local root = 0.62
-	local n = math.random(3, 6)
-	local idx = math.random(1, 5)
-	local t = 0
-	for _ = 1, n do
-		idx = math.clamp(idx + math.random(-2, 2), 1, #PENTA)
-		local s = play(IDS.ping, root * PENTA[idx], 0.045, t)
-		-- нота тянется и затихает
-		if s then task.delay(t, function() if s.Parent then TweenService:Create(s, TweenInfo.new(1.6), { Volume = 0 }):Play() end end) end
-		play(IDS.ping, root * PENTA[idx] * 0.5, 0.02, t) -- мягкий бас октавой ниже
-		t += 0.55 + math.random() * 0.5
-	end
-	musicT = t + 3 + math.random() * 5
+	music.Volume = Sound.on and 0.12 or 0
 end
 
 function Sound.toggle()
@@ -300,10 +283,13 @@ function Sound.init()
 	preloadLib()
 	RunService.Heartbeat:Connect(function(dt)
 		dt = math.min(dt, 0.1)
-		if Sound.on then updateHooves(dt) end
+		if Sound.on then
+			updateHooves(dt)
+			updateSwim(dt)
+		end
 		updateRain(dt)
 		updateNature(dt)
-		updateMusic(dt)
+		updateMusic()
 	end)
 end
 

@@ -246,9 +246,11 @@ local function updatePuddles(dt)
 		tries += 1
 		local a, d = math.random() * math.pi * 2, 300 + math.random() * 1100
 		local qx, qy = x + math.cos(a) * d, y + math.sin(a) * d
-		if not World.blocked(qx, qy, 40) then
+		local hz = World.heightAt
+		local flat = math.abs(hz(qx + 40, qy) - hz(qx - 40, qy)) < 0.5 and math.abs(hz(qx, qy + 40) - hz(qx, qy - 40)) < 0.5
+		if flat and not World.blocked(qx, qy, 40) then
 			local s = 3 + math.random() * 5
-			local p = part(Vector3.new(0.06, s * 2, s * 1.4), CFrame.new(qx * K, World.GROUND + 0.03, qy * K) * CFrame.Angles(0, math.random() * 3, math.pi / 2),
+			local p = part(Vector3.new(0.06, s * 2, s * 1.4), CFrame.new(qx * K, World.groundY(qx, qy) + 0.03, qy * K) * CFrame.Angles(0, math.random() * 3, math.pi / 2),
 				magic and Util.pick({ "#ff8fab", "#ffd43b", "#74c0fc", "#b197fc" }) or "#6f8fa8", Enum.Material.Glass, 0.25)
 			p.Shape = Enum.PartType.Cylinder
 			p.Reflectance = 0.6
@@ -379,7 +381,7 @@ local function updateShoe(t)
 		return
 	end
 	shoeModel.Parent = folder
-	shoeModel:PivotTo(CFrame.new(s.x * K, World.GROUND + 0.6 + math.sin(t * 5) * 0.3, s.y * K) * CFrame.Angles(0, t * 2, 0))
+	shoeModel:PivotTo(CFrame.new(s.x * K, World.groundY(s.x, s.y) + 0.6 + math.sin(t * 5) * 0.3, s.y * K) * CFrame.Angles(0, t * 2, 0))
 end
 
 --[[ ---------- указатели: упражнения и скачки ---------- ]]
@@ -426,7 +428,7 @@ local function syncGates()
 		local prev = i > 1 and r.gates[i - 1] or nil
 		local a = prev and math.atan2(g.y - prev.y, g.x - prev.x) or (r.dir or 0)
 		perp = Vector3.new(-math.sin(a), 0, math.cos(a))
-		local c = World.toStuds(g.x, g.y, World.GROUND)
+		local c = World.toStuds(g.x, g.y, World.groundY(g.x, g.y))
 		for _, s in ipairs({ -1, 1 }) do
 			local post = part(Vector3.new(0.6, 6, 0.6), CFrame.new(c + perp * 6 * s + Vector3.new(0, 3, 0)), g.finish and "#111111" or "#1c7ed6")
 			post.Parent = m

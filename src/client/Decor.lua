@@ -271,7 +271,21 @@ local function addItem(kind, item, x, y)
 	table.insert(c.items, { kind = kind, item = item })
 end
 
+local buildItemRaw
+-- каждый предмет ставим на высоту рельефа в своей точке (чуть утапливаем, чтобы на склоне не висел)
 local function buildItem(m, it)
+	local o = it.item
+	local sub = Instance.new("Model")
+	sub.Name = it.kind
+	buildItemRaw(sub, it)
+	if not o.sky and it.kind ~= "vine" then
+		local sink = (it.kind == "tree") and 0.5 or (it.kind == "flower" and 0.05 or 0.15)
+		sub:TranslateBy(Vector3.new(0, World.heightAt(o.x, o.y) - sink, 0))
+	end
+	sub.Parent = m
+	if it.kind == "shroom" then it.home = sub end
+end
+buildItemRaw = function(m, it)
 	local o = it.item
 	if it.kind == "tree" then
 		makeTree(m, o)

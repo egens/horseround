@@ -150,8 +150,8 @@ local function updateFly(dt)
 	if fly.t < 0.8 then vy = 18 end
 	local alt = root.Position.Y
 	if alt > 320 and vy > 0 then vy = 0 end
-	local _, py = World.fromStuds(root.Position)
-	local gy = World.groundY(0, py)
+	local px, py = World.fromStuds(root.Position)
+	local gy = World.groundY(px, py)
 	if alt < gy + 4 and vy < 0 then vy = 0 end
 	fly.lv.VectorVelocity = Vector3.new(move.X * speed, vy, move.Z * speed)
 	if move.Magnitude > 0.05 then

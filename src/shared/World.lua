@@ -470,6 +470,63 @@ local function distToRoad(x, y)
 end
 World.distToRoad = distToRoad
 
+--[[ ---------- участки с заборами: дворы у домов деревни и огороды ----------
+	Забор — список отрезков (по осям), в нём калитка, а там, где через участок идёт дорога, — проход. ]]
+World.YARDS, World.PLOTS, World.FENCES = {}, {}, {}
+do
+	local function addSide(x1, y1, x2, y2, gate, kind)
+		-- отрезок режем на куски по 40 пикс., выкидываем калитку и куски на дороге
+		local len = hypot(x2 - x1, y2 - y1)
+		local n = math.max(1, math.floor(len / 40 + 0.5))
+		for i = 0, n - 1 do
+			local ax, ay = x1 + (x2 - x1) * i / n, y1 + (y2 - y1) * i / n
+			local bx, by = x1 + (x2 - x1) * (i + 1) / n, y1 + (y2 - y1) * (i + 1) / n
+			local mx, my = (ax + bx) / 2, (ay + by) / 2
+			local inGate = gate and hypot(mx - gate.x, my - gate.y) < gate.r
+			if not inGate and distToRoad(mx, my) > 55 then
+				table.insert(World.FENCES, { ax, ay, bx, by, kind = kind })
+			end
+		end
+	end
+	local function fenceAround(r, gateSide, kind)
+		local x1, y1, x2, y2 = r.x, r.y, r.x + r.w, r.y + r.h
+		local gx = (x1 + x2) / 2
+		local gate = gateSide == "south" and { x = gx, y = y2, r = 45 } or { x = gx, y = y1, r = 45 }
+		addSide(x1, y1, x2, y1, gate, kind)
+		addSide(x2, y1, x2, y2, gate, kind)
+		addSide(x2, y2, x1, y2, gate, kind)
+		addSide(x1, y2, x1, y1, gate, kind)
+	end
+	for _, hh in ipairs(HOUSES) do
+		-- двор: вокруг дома, перед дверью (юг) — побольше; калитка напротив двери
+		local y = { x = hh.x - 70, y = hh.y - 60, w = hh.w + 140, h = hh.h + 60 + 110, house = hh }
+		table.insert(World.YARDS, y)
+		fenceAround(y, "south", "picket")
+	end
+	-- огороды в «Полях и огородах»: где не мешают дороги и дома
+	local FL = World.FARMLAND
+	local pw, ph = 340, 240
+	for i = 0, 3 do
+		for j = 0, 2 do
+			local r = { x = FL.x + 60 + i * (pw + 50), y = FL.y + 60 + j * (ph + 50), w = pw, h = ph }
+			local ok = r.x + r.w < FL.x + FL.w - 20 and r.y + r.h < FL.y + FL.h - 20
+			if ok then
+				for _, q in ipairs({ { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 }, { 0.5, 0.5 }, { 0.5, 0 }, { 0.5, 1 }, { 0, 0.5 }, { 1, 0.5 } }) do
+					if distToRoad(r.x + r.w * q[1], r.y + r.h * q[2]) < 90 then ok = false end
+				end
+				for _, hh in ipairs(HOUSES) do
+					if inRect(r.x + r.w / 2, r.y + r.h / 2, hh, 260) then ok = false end
+				end
+			end
+			if ok then
+				r.crop = ({ "cabbage", "carrot", "pumpkin", "corn", "potato" })[(i + j * 4) % 5 + 1]
+				table.insert(World.PLOTS, r)
+				fenceAround(r, j % 2 == 0 and "south" or "north", "rail")
+			end
+		end
+	end
+end
+
 local OUTER = {
 	{ "desert", World.DESERT }, { "deepforest", World.DEEPFOREST }, { "tundra", World.TUNDRA }, { "mushroom", World.MUSHROOM },
 	{ "forest", World.FOREST[1] }, { "forest", World.FOREST[2] }, { "lake", World.LAKELAND }, { "mountain", MOUNTAIN },
@@ -907,6 +964,11 @@ do
 	for _, w in ipairs(World.CAVE_WALLS) do push({ x = w.x, y = w.y, w = w.w, h = w.h, rock = true }, "rock") end
 	for _, w in ipairs(World.CAVE_INNER_WALLS) do push({ x = w.x, y = w.y, w = w.w, h = w.h, rock = true }, "rock") end
 	for _, hh in ipairs(HOUSES) do push({ x = hh.x, y = hh.y, w = hh.w, h = hh.h }, "house") end
+	for _, fz in ipairs(World.FENCES) do
+		local x1, x2 = math.min(fz[1], fz[3]), math.max(fz[1], fz[3])
+		local y1, y2 = math.min(fz[2], fz[4]), math.max(fz[2], fz[4])
+		push({ x = x1 - 4, y = y1 - 4, w = x2 - x1 + 8, h = y2 - y1 + 8 }, "yard")
+	end
 	for _, st in ipairs(World.MARKET_STALLS) do push({ x = st.x, y = st.y, w = st.w, h = st.h }, "stall") end
 	push({ x = STATION.x + 30, y = STATION.y - 60, w = 160, h = 70 }, "station")
 	for _, I in ipairs(World.ISLANDS) do
@@ -1069,9 +1131,176 @@ function World.syncGround()
 	if type(v) == "number" then World.GROUND = v end
 	return World.GROUND
 end
+
+--[[ ---------- рельеф: холмы по биомам и горы по краям земли ----------
+	Высота считается одинаково на сервере (по ней строится Terrain) и на клиенте (по ней ставятся
+	лошади, деревья, цветы). Возле построек, озёр, пещерок, берега и железной дороги земля ровная (0),
+	дальше плавно поднимаются холмы. За краями земли (север, запад, юг) — горный хребет,
+	на востоке за морем — горы из воды. Высота — в стадах от уровня World.GROUND. ]]
+local HILL = {
+	farm = 1.2, field = 2.6, village = 1.0, farmland = 0.8, lake = 3.5, forest = 6, foxwood = 7, deepforest = 7,
+	grotto = 10, steppe = 4.5, desert = 6.5, tundra = 7, mushroom = 5, dragonrock = 9,
+}
+World.HILL = HILL
+local HC = 160 -- клетка сетки амплитуд, пикс.
+local EXT = 1300 -- насколько за край мира строятся горы, пикс.
+World.RELIEF_EXT = EXT
+local hgrid, hgx0, hgy0, hnx, hny
+local regGrid
+local function flatAt(x, y)
+	-- ровные места: постройки фермы, деревня, рынок, озёра, пещерки, берег, горы с пещерой, станция
+	if inRect(x, y, STABLE, 160) or inRect(x, y, ARENA, 140) or inRect(x, y, PADDOCK, 140) or inRect(x, y, JUMPF, 140) then return true end
+	if inRect(x, y, World.SELL, 140) or inRect(x, y, World.SHOP, 140) or hypot(x - World.START.x, y - World.START.y) < 200 then return true end
+	if x > OX - 200 and x < OX + 1600 and y > OY - 200 and y < OY + 1900 then return true end -- двор фермы между постройками
+	for _, hh in ipairs(HOUSES) do if inRect(x, y, hh, 170) then return true end end
+	for _, r in ipairs(World.PLOTS) do if inRect(x, y, r, 120) then return true end end
+	if hypot(x - WELL.x, y - WELL.y) < 400 or inRect(x, y, World.MARKET, 150) then return true end
+	if lakeAt(x, y, 260) then return true end
+	if inGrotto(x, y, -220) then return true end
+	if x > coastX(y) - 500 then return true end
+	if inRect(x, y, MOUNTAIN, 220) then return true end
+	if math.abs(y - RAIL.y) < 260 and x > RAIL.x1 - 1200 and x < RAIL.x2 + 1200 then return true end
+	if inRect(x, y, STATION, 300) then return true end
+	if hypot(x - World.PIER.x, y - World.PIER.y) < 400 then return true end
+	return false
+end
+local function buildHeightGrid()
+	hgx0, hgy0 = -EXT, -EXT
+	hnx = math.ceil((W + EXT * 2) / HC) + 1
+	hny = math.ceil((H + EXT * 2) / HC) + 1
+	local raw, reg = {}, {}
+	for i = 0, hnx - 1 do
+		local cx = hgx0 + i * HC
+		local col, rcol = {}, {}
+		for j = 0, hny - 1 do
+			local cy = hgy0 + j * HC
+			local a = 0
+			local r = "edge"
+			if cx >= 0 and cy >= 0 and cx <= W and cy <= H then
+				r = regionAt(cx, cy)
+				a = HILL[r] or 0
+				if a > 0 and flatAt(cx, cy) then a = 0 end
+			end
+			col[j] = a
+			rcol[j] = r
+		end
+		raw[i] = col
+		reg[i] = rcol
+	end
+	-- «сжать» холмы от ровных мест на R клеток, потом сгладить окном R — внутри ровных мест ровно 0
+	local R = 3
+	local function pass(src, fn)
+		local a = {}
+		for i = 0, hnx - 1 do
+			a[i] = {}
+			for j = 0, hny - 1 do a[i][j] = fn(src, i, j) end
+		end
+		return a
+	end
+	local function get(src, i, j)
+		i = math.clamp(i, 0, hnx - 1)
+		j = math.clamp(j, 0, hny - 1)
+		return src[i][j]
+	end
+	local e1 = pass(raw, function(s, i, j)
+		local m = s[i][j]
+		for k = -R, R do m = math.min(m, get(s, i + k, j)) end
+		return m
+	end)
+	local e2 = pass(e1, function(s, i, j)
+		local m = s[i][j]
+		for k = -R, R do m = math.min(m, get(s, i, j + k)) end
+		return m
+	end)
+	local b1 = pass(e2, function(s, i, j)
+		local sum = 0
+		for k = -R, R do sum += get(s, i + k, j) end
+		return sum / (2 * R + 1)
+	end)
+	hgrid = pass(b1, function(s, i, j)
+		local sum = 0
+		for k = -R, R do sum += get(s, i, j + k) end
+		return sum / (2 * R + 1)
+	end)
+	regGrid = reg
+end
+local function smoothstep(a, b, v)
+	local t = math.clamp((v - a) / (b - a), 0, 1)
+	return t * t * (3 - 2 * t)
+end
+World.smoothstep = smoothstep
+-- амплитуда холмов в точке (билинейно по сетке)
+local function hillAmp(x, y)
+	if not hgrid then buildHeightGrid() end
+	local fx = math.clamp((x - hgx0) / HC, 0, hnx - 1.001)
+	local fy = math.clamp((y - hgy0) / HC, 0, hny - 1.001)
+	local i, j = math.floor(fx), math.floor(fy)
+	local tx, ty = fx - i, fy - j
+	local a = hgrid[i][j] + (hgrid[i + 1][j] - hgrid[i][j]) * tx
+	local b = hgrid[i][j + 1] + (hgrid[i + 1][j + 1] - hgrid[i][j + 1]) * tx
+	return a + (b - a) * ty
+end
+-- регион по грубой сетке (для материала рельефа)
+function World.regionCoarse(x, y)
+	if not regGrid then buildHeightGrid() end
+	local i = math.clamp(math.floor((x - hgx0) / HC + 0.5), 0, hnx - 1)
+	local j = math.clamp(math.floor((y - hgy0) / HC + 0.5), 0, hny - 1)
+	return regGrid[i][j]
+end
+-- горный хребет за краем земли: d — сколько пикселей за краем (внутри — отрицательное)
+local function ridge(x, y)
+	local dx = math.max(-x, x - W, 0)
+	local dy = math.max(-y, y - H, 0)
+	local d
+	if dx > 0 or dy > 0 then
+		d = hypot(dx, dy)
+	else
+		local m = math.min(x, y, W - x, H - y)
+		if m == W - x then return 0, -m end -- восточный край — море, там предгорий нет
+		d = -m
+	end
+	if d < -360 then return 0, d end
+	local n = math.noise(x / 700, y / 700, 41.7) + math.noise(x / 230, y / 230, 52.3) * 0.45
+	local south = y > H and dx <= 0
+	local east = x > W
+	local peak = south and 55 or 120
+	local foot = 7 * smoothstep(-360, 0, d) * (0.8 + n * 0.5) -- предгорья на краю земли
+	local rise = smoothstep(-40, 650, d) * peak * (0.75 + n * 0.6)
+	local fall = south and (1 - smoothstep(900, 1250, d)) or 1
+	local h = math.max(foot, rise) * fall
+	if east then h = h - 14 * (1 - smoothstep(150, 500, d)) end -- на востоке горы поднимаются из моря
+	return h, d
+end
+World.ridge = ridge
+-- высота рельефа (стады от World.GROUND) без учёта озёр
+local function hillsAt(x, y)
+	if x > W or x < 0 or y < 0 or y > H then return (ridge(x, y)) end
+	local a = hillAmp(x, y)
+	local h = 0
+	if a > 0.01 then
+		local n = math.noise(x / 1300, y / 1300, 3.17) * 0.9 + math.noise(x / 480, y / 480, 7.71) * 0.45 + math.noise(x / 190, y / 190, 9.13) * 0.15
+		h = a * math.clamp(0.45 + n * 1.3, 0, 1.4)
+	end
+	local r = ridge(x, y)
+	return math.max(h, r)
+end
+World.hillsAt = hillsAt
+-- дно озера: у берега 0, к середине глубже
+function World.lakeDepth(L, x, y)
+	local q = blobInfo(L, x, y)
+	if q.d >= q.R then return 0 end
+	local deep = math.clamp(math.min(L.rx, L.ry) * K * 0.4, 4, 9)
+	return deep * smoothstep(0, 0.5, 1 - q.d / q.R)
+end
+World.LAKE_WATER = -1.2 -- уровень воды в озёрах (от уровня земли)
+function World.heightAt(x, y)
+	local L = lakeAt(x, y)
+	if L and not L.lava and not L.ice then return -World.lakeDepth(L, x, y) end
+	return hillsAt(x, y)
+end
 function World.groundY(x, y)
 	if y > H then return World.SKY_Y + World.GROUND end
-	return World.GROUND
+	return World.GROUND + World.heightAt(x, y)
 end
 
 return World

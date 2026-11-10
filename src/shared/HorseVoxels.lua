@@ -676,38 +676,11 @@ function HV.cloudCells()
 	return cc
 end
 
--- упряжь: вальтрап, седло и уздечка (всадник в Roblox — сам игрок)
+-- упряжь: седло, вальтрап и уздечка собираются из настоящих деталей в HorseBuilder
+-- (HB.addSaddle, HB.addBridle). Здесь — пустые кубики для совместимости.
 -- R = { pad, saddleStyle, saddleColor, bridleStyle, bridleColor, boots }
-function HV.tackCells(R)
-	local cells, glow = {}, {}
-	local function put(x, y, z, c) cells[key3(x, y, z)] = c end
-	local function gl(x, y, z, c) glow[key3(x, y, z)] = c end
-	local function fill(x0, x1, y0, y1, z0, z1, c)
-		for x = x0, x1 do for y = y0, y1 do for z = z0, z1 do put(x, y, z, c) end end end
-	end
-	local sc, bc = R.saddleColor or "#5b3a1e", R.bridleColor or "#2b1a10"
-	fill(-4, 1, 13, 13, -4, 3, R.pad or "#7a6a55")
-	fill(-3, 0, 14, 14, -2, 1, sc)
-	fill(-4, -4, 14, 15, -2, 1, sc)
-	put(1, 14, -1, sc); put(1, 14, 0, sc)
-	-- уздечка и повод — тонкими ремешками, их строит HorseBuilder (HB.addBridle)
-	local st = R.saddleStyle or "classic"
-	if st == "crystal" then
-		for _, q in ipairs({ { 1, 15, -1, "#74c0fc" }, { 1, 15, 0, "#f783ac" }, { -4, 16, -1, "#b197fc" }, { -4, 16, 0, "#63e6be" }, { -4, 13, -5, "#74c0fc" }, { 1, 13, -5, "#f783ac" }, { -4, 13, 4, "#63e6be" }, { 1, 13, 4, "#b197fc" } }) do
-			gl(q[1], q[2], q[3], q[4])
-		end
-	elseif st == "plant" then
-		for x = -4, 1 do
-			put(x, 13, -5, x % 2 ~= 0 and "#2f9e44" or "#69db7c"); put(x, 13, 4, x % 2 ~= 0 and "#69db7c" or "#2f9e44")
-		end
-		put(-4, 16, -1, "#2f9e44"); put(-4, 16, 0, "#69db7c"); put(-1, 13, -6, "#ff8fab"); put(-1, 13, 5, "#ffd43b"); put(1, 15, 0, "#ff8fab")
-	elseif st == "shell" then
-		for x = -4, 1, 2 do
-			put(x, 13, -5, "#ffc9de"); put(x + 1, 13, -5, "#fff5f0"); put(x, 13, 4, "#fff5f0"); put(x + 1, 13, 4, "#ffc9de")
-		end
-		put(-4, 16, -1, "#ffc9de"); put(-4, 16, 0, "#fff5f0"); gl(1, 15, 0, "#fff9f5")
-	end
-	return { cells = cells, glow = glow }
+function HV.tackCells(_R)
+	return { cells = {}, glow = {} }
 end
 
 -- поза для действия лошади (act = { k, t, d, leg })
