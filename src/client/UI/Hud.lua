@@ -6,6 +6,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Util = require(Shared.Util)
@@ -25,13 +26,29 @@ local gui
 local el = {}
 Hud.windows = nil -- задаёт Main
 
+--[[ Компактный режим для телефона: экран маленький, поэтому вместо девяти кнопок сверху — одна «☰» с меню,
+	панель езды короче (один переключатель аллюра вместо трёх), миникарта меньше и сверху справа
+	(внизу слева на телефоне — джойстик), кнопки действий обычного размера. ]]
+local compact = false
+local function detectCompact()
+	if not UserInputService.TouchEnabled then return false end
+	local cam = workspace.CurrentCamera
+	local t0 = os.clock()
+	while (not cam or cam.ViewportSize.X <= 1) and os.clock() - t0 < 3 do
+		task.wait(0.05)
+		cam = workspace.CurrentCamera
+	end
+	local vs = cam and cam.ViewportSize or Vector2.new(800, 600)
+	return math.min(vs.X, vs.Y) < 600
+end
+
 local function pill(parent, text)
 	local t = make("TextLabel", {
-		Size = UDim2.fromOffset(0, 30), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = C.panel, BackgroundTransparency = 0.05,
-		Text = text or "", Font = Kit.BOLD, TextSize = 15, TextColor3 = C.text, Parent = parent,
+		Size = UDim2.fromOffset(0, compact and 24 or 30), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = C.panel, BackgroundTransparency = 0.05,
+		Text = text or "", Font = Kit.BOLD, TextSize = compact and 13 or 15, TextColor3 = C.text, Parent = parent,
 	})
-	Kit.corner(t, 15)
-	make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = t })
+	Kit.corner(t, compact and 12 or 15)
+	make("UIPadding", { PaddingLeft = UDim.new(0, compact and 7 or 10), PaddingRight = UDim.new(0, compact and 7 or 10), Parent = t })
 	return t
 end
 local function hudButton(parent, text, fn, title)
@@ -41,6 +58,22 @@ local function hudButton(parent, text, fn, title)
 	Kit.corner(b, 17)
 	make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = b })
 	b.Activated:Connect(fn)
+	return b
+end
+-- строка выпадающего меню (телефон): после нажатия меню закрывается
+local menuOrder = 0
+local function menuItem(parent, text, fn)
+	menuOrder += 1
+	local b = make("TextButton", {
+		Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.btn, Text = text, Font = Kit.BOLD, TextSize = 15, TextColor3 = C.text,
+		TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = menuOrder, ZIndex = 26, Parent = parent,
+	})
+	Kit.corner(b, 8)
+	make("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = b })
+	b.Activated:Connect(function()
+		el.menu.Visible = false
+		fn()
+	end)
 	return b
 end
 local function hlist(parent, align, gap)
@@ -78,65 +111,91 @@ end
 
 --[[ ---------- построение ---------- ]]
 function Hud.build()
+	compact = detectCompact()
+	Hud.compact = compact
 	gui = make("ScreenGui", { Name = "HorseFarmHUD", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, IgnoreGuiInset = false, Parent = player:WaitForChild("PlayerGui") })
 	Hud.gui = gui
 	-- верх слева
-	local left = make("Frame", { Position = UDim2.fromOffset(8, 8), Size = UDim2.new(0.55, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
-	hlist(left)
+	local left = make("Frame", { Position = UDim2.fromOffset(compact and 6 or 8, compact and 6 or 8), Size = UDim2.new(compact and 0.6 or 0.55, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
+	hlist(left, nil, compact and 4 or 6)
 	el.money = pill(left, "💰 0")
 	el.count = pill(left, "🐴 0/20")
 	el.clock = pill(left, "☀️ 08:00")
 	el.medals = pill(left, "")
 	el.event = pill(left, "")
-	-- верх справа
-	local right = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.new(0.44, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
-	hlist(right, Enum.HorizontalAlignment.Right)
 	local W = function(name, data) return function() Hud.windows.open(name, data) end end
-	hudButton(right, "🐴 Лошади", function() Hud.windows.open("stable", { can = true }) end)
-	el.quests = hudButton(right, "📜", W("quests"))
-	hudButton(right, "👥", W("players"))
-	hudButton(right, "📖 Индекс", W("index"))
-	hudButton(right, "🗺 Карта", function() Hud.toggleMap() end)
-	el.detector = hudButton(right, "📡", function() State.act("detector") end)
-	hudButton(right, "🎒", W("inventory"))
-	hudButton(right, "❓", W("help"))
 	local snd
-	snd = hudButton(right, "🔊", function() snd.Text = Sound.toggle() and "🔊" or "🔇" end)
+	if compact then
+		-- телефон: одна кнопка «☰», остальное — в выпадающем меню
+		el.menuBtn = make("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 6), Size = UDim2.fromOffset(0, 32), AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundColor3 = C.panel, Text = "☰", Font = Kit.BOLD, TextSize = 18, TextColor3 = C.text, ZIndex = 25, Parent = gui })
+		Kit.corner(el.menuBtn, 16)
+		make("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), Parent = el.menuBtn })
+		el.menu = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 42), Size = UDim2.fromOffset(180, 0), AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundColor3 = C.panel, Visible = false, ZIndex = 25, Parent = gui })
+		Kit.corner(el.menu, 10)
+		Kit.pad(el.menu, 6)
+		make("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = el.menu })
+		el.menuBtn.Activated:Connect(function() el.menu.Visible = not el.menu.Visible end)
+		menuItem(el.menu, "🐴 Лошади", function() Hud.windows.open("stable", { can = true }) end)
+		el.quests = menuItem(el.menu, "📜 Задания", W("quests"))
+		el.detector = menuItem(el.menu, "📡 Металлоискатель", function() State.act("detector") end)
+		menuItem(el.menu, "🎒 Сумка", W("inventory"))
+		menuItem(el.menu, "🗺 Карта", function() Hud.toggleMap(true) end)
+		menuItem(el.menu, "📖 Индекс", W("index"))
+		menuItem(el.menu, "👥 Игроки", W("players"))
+		menuItem(el.menu, "❓ Помощь", W("help"))
+		snd = menuItem(el.menu, "🔊 Звук", function() snd.Text = Sound.toggle() and "🔊 Звук" or "🔇 Звук выкл." end)
+	else
+		-- верх справа
+		local right = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.new(0.44, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
+		hlist(right, Enum.HorizontalAlignment.Right)
+		hudButton(right, "🐴 Лошади", function() Hud.windows.open("stable", { can = true }) end)
+		el.quests = hudButton(right, "📜", W("quests"))
+		hudButton(right, "👥", W("players"))
+		hudButton(right, "📖 Индекс", W("index"))
+		hudButton(right, "🗺 Карта", function() Hud.toggleMap() end)
+		el.detector = hudButton(right, "📡", function() State.act("detector") end)
+		hudButton(right, "🎒", W("inventory"))
+		hudButton(right, "❓", W("help"))
+		snd = hudButton(right, "🔊", function() snd.Text = Sound.toggle() and "🔊" or "🔇" end)
+	end
 	-- подсказка
 	el.hint = make("TextLabel", {
-		AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 92), Size = UDim2.new(0.6, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = C.panel, BackgroundTransparency = 0.15, Text = "", TextWrapped = true, Font = Kit.FONT, TextSize = 15, TextColor3 = C.text, Parent = gui,
+		AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, compact and 64 or 92), Size = UDim2.new(compact and 0.5 or 0.6, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = C.panel, BackgroundTransparency = 0.15, Text = "", TextWrapped = true, Font = Kit.FONT, TextSize = compact and 13 or 15, TextColor3 = C.text, Parent = gui,
 	})
 	Kit.corner(el.hint, 10)
-	Kit.pad(el.hint, 6)
+	Kit.pad(el.hint, compact and 4 or 6)
 	-- металлоискатель
-	el.meter = make("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 56), Size = UDim2.fromOffset(220, 26), BackgroundColor3 = C.panel, Visible = false, Parent = gui })
+	el.meter = make("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, compact and 34 or 56), Size = UDim2.fromOffset(compact and 160 or 220, 26), BackgroundColor3 = C.panel, Visible = false, Parent = gui })
 	Kit.corner(el.meter, 13)
 	make("TextLabel", { Size = UDim2.fromOffset(26, 26), BackgroundTransparency = 1, Text = "📡", TextSize = 18, Parent = el.meter })
 	local track = Kit.corner(make("Frame", { Position = UDim2.fromOffset(30, 7), Size = UDim2.new(1, -40, 0, 12), BackgroundColor3 = color("#e9dcc4"), ClipsDescendants = true, Parent = el.meter }), 6)
 	el.meterBar = make("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.green, BorderSizePixel = 0, Parent = track })
 	-- всплывающие сообщения
-	el.toasts = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 96), Size = UDim2.fromOffset(340, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
+	el.toasts = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = compact and UDim2.new(1, -6, 0, 140) or UDim2.new(1, -8, 0, 96), Size = UDim2.fromOffset(compact and 230 or 340, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
 	make("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = el.toasts })
 	-- упражнение
-	el.exercise = make("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 140), Size = UDim2.fromOffset(460, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = C.panel, Visible = false, Parent = gui })
+	el.exercise = make("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, compact and 100 or 140), Size = compact and UDim2.new(0.55, 0, 0, 0) or UDim2.fromOffset(460, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = C.panel, Visible = false, Parent = gui })
 	Kit.corner(el.exercise, 12)
 	Kit.pad(el.exercise, 8)
 	make("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = el.exercise })
-	el.exTitle = Kit.text(el.exercise, "", { bold = true, size = 17 })
-	el.exLine = Kit.text(el.exercise, "", { size = 15 })
-	el.exHint = Kit.text(el.exercise, "", { size = 15, bold = true })
+	el.exTitle = Kit.text(el.exercise, "", { bold = true, size = compact and 14 or 17 })
+	el.exLine = Kit.text(el.exercise, "", { size = compact and 13 or 15 })
+	el.exHint = Kit.text(el.exercise, "", { size = compact and 13 or 15, bold = true })
 	el.exLetter = make("TextLabel", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -34, 0, 0), Size = UDim2.fromOffset(44, 44), BackgroundColor3 = C.white, Text = "", Font = Enum.Font.GothamBlack, TextSize = 26, TextColor3 = color("#1c4f8a"), Parent = el.exercise })
 	Kit.corner(el.exLetter, 8)
 	Kit.closeButton(el.exercise, function() State.act("cancelEx") end, 28, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0) })
 	-- низ: панели
-	local bottom = make("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(0.9, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
+	-- на телефоне по бокам снизу джойстик и кнопка прыжка — панели держим посередине и уже
+	local bottom = make("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, compact and -6 or -10), Size = UDim2.new(compact and 0.56 or 0.9, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = gui })
 	make("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Bottom, SortOrder = Enum.SortOrder.LayoutOrder, Parent = bottom })
 	local function panel(order)
 		local f = make("Frame", { Size = UDim2.fromOffset(0, 0), AutomaticSize = Enum.AutomaticSize.XY, BackgroundColor3 = C.panel, LayoutOrder = order, Visible = false, Parent = bottom })
 		Kit.corner(f, 12)
-		Kit.pad(f, 6)
-		hlist(f, Enum.HorizontalAlignment.Center)
+		Kit.pad(f, compact and 4 or 6)
+		hlist(f, Enum.HorizontalAlignment.Center, compact and 4 or 6)
 		return f
 	end
 	el.lead = panel(1)
@@ -144,30 +203,41 @@ function Hud.build()
 	Kit.button(el.lead, "Отпустить", function() State.act("release") end, { small = true })
 	el.walk = panel(2)
 	el.walkName = pill(el.walk, "")
-	Kit.button(el.walk, "💕 Погладить", function() State.act("pet") end, { small = true })
-	Kit.button(el.walk, "🎾 Играть", function() State.act("play") end, { small = true })
+	el.walkName.Visible = not compact
+	Kit.button(el.walk, compact and "💕" or "💕 Погладить", function() State.act("pet") end, { small = true })
+	Kit.button(el.walk, compact and "🎾" or "🎾 Играть", function() State.act("play") end, { small = true })
 	Kit.button(el.walk, "🏠 В денник", function() State.act("stopWalk") end, { small = true })
 	el.ride = panel(3)
 	el.rideName = pill(el.ride, "")
-	local energy = Kit.corner(make("Frame", { Size = UDim2.fromOffset(110, 14), BackgroundColor3 = color("#e9dcc4"), ClipsDescendants = true, Parent = el.ride }), 7)
+	el.rideName.Visible = not compact
+	local energy = Kit.corner(make("Frame", { Size = UDim2.fromOffset(compact and 60 or 110, compact and 10 or 14), BackgroundColor3 = color("#e9dcc4"), ClipsDescendants = true, Parent = el.ride }), 7)
 	el.energy = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.green, BorderSizePixel = 0, Parent = energy })
 	el.gaits = {}
-	for g = 0, 2 do
-		el.gaits[g] = Kit.button(el.ride, (g + 1) .. " " .. Items.GAITS[g + 1], function() State.act("setGait", g) end, { small = true })
+	if compact then
+		-- один переключатель: шаг → рысь → галоп → шаг
+		el.gaitBtn = Kit.button(el.ride, "🐎 " .. Items.GAITS[1], function()
+			local g = State.hud and State.hud.mounted and State.hud.mounted.gait or 0
+			State.act("setGait", (g + 1) % 3)
+		end, { small = true, color = "blue" })
+	else
+		for g = 0, 2 do
+			el.gaits[g] = Kit.button(el.ride, (g + 1) .. " " .. Items.GAITS[g + 1], function() State.act("setGait", g) end, { small = true })
+		end
 	end
-	el.fly = Kit.button(el.ride, "🕊️ Взлететь", function() State.act("fly") end, { small = true })
-	Kit.button(el.ride, "🎭 Трюки", function()
+	el.fly = Kit.button(el.ride, compact and "🕊️" or "🕊️ Взлететь", function() State.act("fly") end, { small = true })
+	Kit.button(el.ride, compact and "🎭" or "🎭 Трюки", function()
 		local m = State.mounted()
 		if m then Hud.windows.open("tricks", { id = m.id }) end
 	end, { small = true })
 	Kit.button(el.ride, "Слезть", function() State.act("dismount") end, { small = true, color = "ghost" })
 	-- большие кнопки действий
 	local actions = make("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 4, Parent = bottom })
-	hlist(actions, Enum.HorizontalAlignment.Center, 10)
-	el.birth = Kit.button(actions, "🍼 Родить жеребёнка", function() State.act("birth") end, { big = true, color = "pink" })
-	el.lift = Kit.button(actions, "⤴ Ноги выше!", function() Hud.onLift() end, { big = true, color = "orange" })
-	el.lasso = Kit.button(actions, "🤠 Бросить лассо [F]", function() State.act("lasso") end, { big = true, color = "orange" })
-	el.prompt = Kit.button(actions, "", function() State.act("interact") end, { big = true, color = "green" })
+	hlist(actions, Enum.HorizontalAlignment.Center, compact and 6 or 10)
+	local big = not compact
+	el.birth = Kit.button(actions, "🍼 Родить жеребёнка", function() State.act("birth") end, { big = big, color = "pink" })
+	el.lift = Kit.button(actions, "⤴ Ноги выше!", function() Hud.onLift() end, { big = big, color = "orange" })
+	el.lasso = Kit.button(actions, compact and "🤠 Лассо" or "🤠 Бросить лассо [F]", function() State.act("lasso") end, { big = big, color = "orange" })
+	el.prompt = Kit.button(actions, "", function() State.act("interact") end, { big = big, color = "green" })
 	-- миникарта и большая карта
 	-- ошибка в карте не должна ломать весь интерфейс
 	for _, f in ipairs({ Hud.buildMinimap, Hud.buildBigMap }) do
@@ -182,14 +252,16 @@ end
 
 --[[ ---------- миникарта ---------- ]]
 local mm = {}
-local MM_W, MM_H = 210, 160
+local MM_W, MM_H = 210, 160 -- на телефоне меньше (см. buildMinimap)
 local REGION_COLORS = {
 	farm = "#9ccb6c", field = "#a9d26f", village = "#b5d38a", farmland = "#c8b26f", lake = "#8ec46a", forest = "#4f8a3a", foxwood = "#3f7231",
 	deepforest = "#2f5a2a", mushroom = "#9b87c9", desert = "#e8cf8f", tundra = "#eef4f8", mountain = "#8a8580", cave = "#4a4744", grotto = "#86b84f",
 	grottocave = "#4a4744", dragonrock = "#3b3436", steppe = "#c8b46a", sea = "#3f8fc0", market = "#d9b98c", i1 = "#86b84f", i2 = "#86b84f", i3 = "#86b84f", i4 = "#7a3b2e",
 }
 function Hud.buildMinimap()
-	local frame = make("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, -8), Size = UDim2.fromOffset(MM_W, MM_H), BackgroundColor3 = color("#3f8fc0"), ClipsDescendants = true, Parent = gui })
+	if compact then MM_W, MM_H = 120, 90 end
+	-- на телефоне миникарта сверху справа под «☰»: внизу слева там джойстик
+	local frame = make("Frame", { AnchorPoint = compact and Vector2.new(1, 0) or Vector2.new(0, 1), Position = compact and UDim2.new(1, -6, 0, 44) or UDim2.new(0, 8, 1, -8), Size = UDim2.fromOffset(MM_W, MM_H), BackgroundColor3 = color("#3f8fc0"), ClipsDescendants = true, Parent = gui })
 	Kit.corner(frame, 8)
 	Kit.stroke(frame, C.panel, 2)
 	mm.frame = frame
@@ -225,7 +297,7 @@ function Hud.buildMinimap()
 	-- клик или тап по миникарте открывает большую карту
 	local open = make("TextButton", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "", ZIndex = 8, Parent = frame })
 	open.Activated:Connect(function() Hud.toggleMap(true) end)
-	make("TextLabel", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -4, 1, -2), Size = UDim2.fromOffset(110, 14), BackgroundTransparency = 1,
+	make("TextLabel", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -4, 1, -2), Size = UDim2.fromOffset(110, 14), BackgroundTransparency = 1, Visible = not compact,
 		Text = "нажми — большая карта", TextSize = 10, Font = Kit.BOLD, TextColor3 = C.white, TextStrokeTransparency = 0.3, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 7, Parent = frame })
 	mm.label = make("TextLabel", { Position = UDim2.fromOffset(4, 2), Size = UDim2.new(1, -8, 0, 14), BackgroundTransparency = 1, Text = "", TextSize = 11, Font = Kit.BOLD, TextColor3 = C.white, TextStrokeTransparency = 0.4, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 6, Parent = frame })
 end
@@ -482,8 +554,13 @@ local function show(o, on) o.Visible = on and true or false end
 function Hud.update(d)
 	el.money.Text = "💰 " .. d.money
 	el.count.Text = "🐴 " .. d.count .. "/" .. d.max
-	el.clock.Text = d.clock .. " · " .. (d.region or "")
-	el.quests.Text = d.quests > 0 and ("📜 " .. d.quests) or "📜"
+	el.clock.Text = compact and d.clock or (d.clock .. " · " .. (d.region or ""))
+	if compact then
+		el.quests.Text = d.quests > 0 and ("📜 Задания: " .. d.quests) or "📜 Задания"
+		el.menuBtn.Text = d.quests > 0 and ("☰ " .. d.quests) or "☰"
+	else
+		el.quests.Text = d.quests > 0 and ("📜 " .. d.quests) or "📜"
+	end
 	local md = {}
 	for _, k in ipairs({ "gold", "silver", "bronze" }) do
 		if (d.medals[k] or 0) > 0 then table.insert(md, Items.MEDALS[k] .. d.medals[k]) end
@@ -495,13 +572,13 @@ function Hud.update(d)
 	show(el.detector, d.detector ~= nil)
 	show(el.meter, d.detector and d.detector.on)
 	if d.detector then
-		el.detector.BackgroundColor3 = d.detector.on and color("#d0ebff") or C.panel
+		el.detector.BackgroundColor3 = d.detector.on and color("#d0ebff") or (compact and C.btn or C.panel)
 		el.meterBar.Size = UDim2.fromScale(d.detector.signal, 1)
 		el.meterBar.BackgroundColor3 = d.detector.signal > 0.85 and C.red or d.detector.signal > 0.5 and C.orange or C.green
 	end
 	-- кнопка «E»
 	show(el.prompt, d.prompt ~= nil)
-	if d.prompt then el.prompt.Text = d.prompt .. "  [E]" end
+	if d.prompt then el.prompt.Text = compact and d.prompt or (d.prompt .. "  [E]") end
 	show(el.lasso, d.canLasso)
 	-- езда
 	show(el.ride, d.mounted ~= nil)
@@ -510,12 +587,14 @@ function Hud.update(d)
 		el.rideName.Text = "🏇 " .. m.name
 		el.energy.Size = UDim2.fromScale(math.clamp(m.energy / 100, 0, 1), 1)
 		el.energy.BackgroundColor3 = m.energy < 25 and C.red or m.energy < 50 and C.orange or C.green
+		if el.gaitBtn then el.gaitBtn.Text = "🐎 " .. (Items.GAITS[m.gait + 1] or "") end
 		for g = 0, 2 do
+			if not el.gaits[g] then break end
 			el.gaits[g].BackgroundColor3 = g == m.gait and C.blue or C.btn
 			el.gaits[g].TextColor3 = g == m.gait and C.white or C.text
 		end
 		show(el.fly, m.wings)
-		el.fly.Text = m.fly and "🛬 Сесть" or "🕊️ Взлететь"
+		el.fly.Text = compact and (m.fly and "🛬" or "🕊️") or (m.fly and "🛬 Сесть" or "🕊️ Взлететь")
 	end
 	show(el.walk, d.walk ~= nil)
 	if d.walk then el.walkName.Text = "🐴 Гуляем: " .. d.walk end
